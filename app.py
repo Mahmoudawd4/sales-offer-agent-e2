@@ -7,7 +7,7 @@ from datetime import date
 from dateutil.relativedelta import relativedelta
 import plotly.graph_objects as go 
 
-# --- 1. قاعدة بيانات المشاريع (بدون أي حذف) ---
+# --- 1. قاعدة بيانات المشاريع ---
 PROJECTS_DATABASE = {
     "SILA MASDAR": {"url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=0&single=true&output=csv", "gov_pct": 2.0, "admin_fees": 625, "res_fee": 20000},
     "KHALIFA CITY": {"url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1491192679&single=true&output=csv", "gov_pct": 1.0, "admin_fees": 625, "res_fee": 20000},
@@ -56,7 +56,7 @@ ALL_PLANS = {
     "40% DISCOUNT Plan 12 (Cash 40% Disc)": {"dp_pct": 100, "disc": 40, "default_monthly": 0.0}
 }
 
-# --- 2. Functions (محدثة بالكامل) ---
+# --- Functions ---
 @st.cache_data
 def load_google_sheet(url):
     try:
@@ -81,7 +81,6 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
     total_dp_val = (selling_price * (dp_pct / 100))
     dp_after_booking = max(0, total_dp_val - res_fee)
     dp_months = settings['dp_months']
-    
     if dp_pct > 0:
         if dp_months > 1:
             for i in range(dp_months):
@@ -89,11 +88,9 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
                 plan.append({"Milestone": f"DP Installment {i+1}", "Date": d.strftime("%b-%y"), "Percent": f"{(dp_pct/dp_months):.1f}%", "Amount": dp_after_booking / dp_months})
         else:
             plan.append({"Milestone": "DP Balance Payment", "Date": start_date.strftime("%b-%y"), "Percent": f"{dp_pct}%", "Amount": dp_after_booking})
-    
     if plan_cfg.get("is_special"):
         special_rec_date = start_date + relativedelta(months=12)
         plan.append({"Milestone": "Special Installment (10%)", "Date": special_rec_date.strftime("%b-%y"), "Percent": "10%", "Amount": selling_price * 0.10})
-    
     monthly_pct = settings['monthly_pct'] / 100
     curr_d = start_date + relativedelta(months=max(1, dp_months))
     while curr_d < handover_date:
@@ -105,10 +102,8 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
         if amt > 0:
             plan.append({"Milestone": "Monthly Installment", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['monthly_pct']}%", "Amount": amt})
         curr_d += relativedelta(months=1)
-    
-    total_inst = sum(item['Amount'] for item in plan if "TOTAL" not in item['Milestone'])
+    total_inst = sum(item['Amount'] for item in plan)
     plan.append({"Milestone": "TOTAL INSTALLMENT", "Date": "---", "Percent": "---", "Amount": total_inst})
-    
     handover_amt = selling_price - total_inst
     if handover_amt > 1:
         plan.append({"Milestone": "Balance Handover", "Date": handover_date.strftime("%b-%y"), "Percent": "Balance", "Amount": handover_amt})
@@ -118,24 +113,17 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
     try:
         pdf = FPDF()
         pdf.add_page()
-        
-        # 1. الشعار
-        try:
-            res_logo = requests.get(LOGO_URL, timeout=5)
-            logo_img = BytesIO(res_logo.content)
-            pdf.image(logo_img, x=10, y=8, w=35)
+        try: pdf.image(LOGO_URL, x=10, y=8, w=35)
         except: pass
-
         pdf.set_font("Arial", 'B', 18)
+        pdf.set_text_color(44, 62, 80)
         pdf.cell(0, 15, f"SALES OFFER - {project_name}", ln=True, align='C')
         pdf.ln(5)
-
-        # 2. مواصفات الوحدة (UNIT SPECIFICATIONS)
+        pdf.set_xy(10, 35)
         pdf.set_fill_color(240, 240, 240)
         pdf.set_font("Arial", 'B', 11)
         pdf.cell(190, 8, " UNIT SPECIFICATIONS", 0, 1, 'L', True)
-        pdf.set_font("Arial", size=10)
-        
+        pdf.set_font("Arial", size=10); pdf.set_text_color(0)
         pdf.cell(95, 6, f" Unit No: {unit_data.get('Plot + Unit No.', 'N/A')}", 0, 0)
         pdf.cell(95, 6, f" Sub-type: {unit_data.get('Sub-type', 'N/A')}", 0, 1)
         pdf.cell(95, 6, f" Unit Type: {unit_data.get('UNIT TYPE', 'N/A')}", 0, 0)
@@ -143,53 +131,46 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
         pdf.cell(95, 6, f" Bedrooms: {unit_data.get('Bedrooms', 'N/A')}", 0, 0)
         pdf.cell(95, 6, f" View: {unit_data.get('View', 'N/A')}", 0, 1)
         pdf.ln(5)
-
-        # 3. الملخص المالي (FINANCIAL SUMMARY)
         pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
-        pdf.cell(190, 8, " FINANCIAL SUMMARY", 0, 1, 'L', True)
+        pdf.cell(190, 8, f" FINANCIAL SUMMARY", 0, 1, 'L', True)
         pdf.set_font("Arial", size=10)
         pdf.cell(100, 6, "Original Price:", 0); pdf.cell(90, 6, f"{financials['u_price']:,.2f} AED", 0, 1, 'R')
         pdf.cell(100, 6, f"Discount ({financials['disc_pct']}%):", 0); pdf.cell(90, 6, f"- {financials['disc_val']:,.2f} AED", 0, 1, 'R')
         pdf.cell(100, 6, "Selling Price:", 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
         pdf.set_text_color(200, 0, 0)
         pdf.cell(100, 6, "Gov. Fees (Registration):", 0); pdf.cell(90, 6, f"{financials['gov_fees']:,.2f} AED", 0, 1, 'R')
-        pdf.set_text_color(0); pdf.set_font("Arial", 'B', 10)
+        pdf.set_text_color(0)
+        pdf.set_font("Arial", 'B', 10)
         total_all = financials['selling_price'] + financials['gov_fees']
         pdf.cell(100, 8, "Total Amount Payable:", 0); pdf.cell(90, 8, f"{total_all:,.2f} AED", 0, 1, 'R')
-        pdf.ln(5)
-
-        # 4. جدول الدفعات
+        pdf.ln(8)
         pdf.set_font("Arial", 'B', 10); pdf.set_fill_color(44, 62, 80); pdf.set_text_color(255, 255, 255)
-        pdf.cell(70, 8, " Milestone", 1, 0, 'L', True); pdf.cell(40, 8, " Date", 1, 0, 'C', True)
-        pdf.cell(20, 8, " %", 1, 0, 'C', True); pdf.cell(60, 8, " Amount (AED)", 1, 1, 'R', True)
-        pdf.set_text_color(0); pdf.set_font("Arial", size=8)
-        
+        pdf.cell(70, 10, " Milestone", 1, 0, 'L', True); pdf.cell(40, 10, " Date", 1, 0, 'C', True)
+        pdf.cell(20, 10, " %", 1, 0, 'C', True); pdf.cell(60, 10, " Amount (AED)", 1, 1, 'R', True)
+        pdf.set_text_color(0); pdf.set_font("Arial", size=9)
         for row in schedule:
-            if row['Milestone'] == "TOTAL INSTALLMENT": continue # تخطي سطر المجموع لتوفير مساحة
-            pdf.cell(70, 7, f" {row['Milestone']}", 1)
-            pdf.cell(40, 7, f" {row['Date']}", 1, 0, 'C')
-            pdf.cell(20, 7, f" {row['Percent']}", 1, 0, 'C')
-            pdf.cell(60, 7, f"{row['Amount']:,.2f} ", 1, 1, 'R')
-
-        # 5. إضافة صورة الـ Layout (هنا يكمن الإصلاح)
-        if layout_url and str(layout_url).startswith("http"):
+            if row['Milestone'] == "TOTAL INSTALLMENT":
+                pdf.set_font("Arial", 'B', 9); pdf.set_fill_color(220, 220, 220)
+                pdf.cell(70, 8, f" {row['Milestone']}", 1, 0, 'L', True)
+                pdf.cell(40, 8, f" {row['Date']}", 1, 0, 'C', True)
+                pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C', True)
+                pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R', True)
+                pdf.set_font("Arial", size=9); pdf.set_fill_color(255, 255, 255)
+            else:
+                pdf.cell(70, 8, f" {row['Milestone']}", 1)
+                pdf.cell(40, 8, f" {row['Date']}", 1, 0, 'C')
+                pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C')
+                pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R')
+        if layout_url and str(layout_url) != 'nan':
             try:
-                pdf.add_page() # إضافة صفحة جديدة للصورة لضمان عدم تداخلها
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 10, "UNIT LAYOUT / TYPE", ln=True, align='C')
-                
-                response = requests.get(layout_url, timeout=15)
-                img_data = BytesIO(response.content)
-                # وضع الصورة في منتصف الصفحة
-                pdf.image(img_data, x=20, y=30, w=170) 
-            except Exception as e:
-                print(f"Image Error: {e}")
-
-        # تصدير الملف بترميز صحيح
-        return pdf.output(dest='S').encode('latin-1', 'replace')
-    except Exception as e:
-        print(f"PDF Error: {e}")
-        return None
+                res = requests.get(layout_url, timeout=10)
+                img_data = BytesIO(res.content)
+                pdf.ln(10)
+                if pdf.get_y() > 180: pdf.add_page()
+                pdf.image(img_data, x=30, y=pdf.get_y()+5, w=150)
+            except: pass
+        return pdf.output(dest='S').encode('latin-1')
+    except: return None
 
 def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d, proj_key, df_photos):
     u_data = df_inv[df_inv['Plot + Unit No.'] == unit_id].iloc[0]
@@ -200,19 +181,21 @@ def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d, proj_ke
     g_fees = (s_price * (PROJECTS_DATABASE[proj_key]["gov_pct"] / 100)) + PROJECTS_DATABASE[proj_key]["admin_fees"]
     fin = {'u_price': u_price, 'disc_pct': total_disc_pct, 'disc_val': u_price * (total_disc_pct/100), 'selling_price': s_price, 'gov_fees': g_fees}
     sched = calculate_ultra_flexible_plan(s_price, ALL_PLANS[plan_key], settings_dict, date.today(), h_date, PROJECTS_DATABASE[proj_key]["res_fee"])
-    
     l_url = None
     if df_photos is not None:
         try:
             p_key = proj_key.split()[0].upper()
             unit_bed = str(u_data.get('Bedrooms', '')).replace('.0', '').strip()
-            match = df_photos[(df_photos['Project'].astype(str).str.upper().str.contains(p_key)) & (df_photos['Bedrooms'].astype(str).str.contains(unit_bed))]
+            unit_sub = str(u_data.get('Sub-type', '')).upper().strip()
+            temp_photos = df_photos.copy()
+            temp_photos['clean_proj'] = temp_photos['Project'].astype(str).str.upper()
+            temp_photos['clean_bed'] = temp_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False)
+            match = temp_photos[(temp_photos['clean_proj'].str.contains(p_key)) & (temp_photos['clean_bed'] == unit_bed)]
             if not match.empty: l_url = match.iloc[0]['Layout_URL']
         except: pass
-        
     return u_data, fin, sched, l_url, h_date
 
-# --- 3. App UI ---
+# --- App UI ---
 st.set_page_config(page_title="Reportage Smart Agent", layout="wide")
 st.title("🏗️ Reportage Sales AI")
 
@@ -243,29 +226,15 @@ if df_inventory is not None:
         m2.metric("Gov. Fees", f"{financials['gov_fees']:,.2f} AED")
         m3.metric("Total Payable", f"{financials['selling_price'] + financials['gov_fees']:,.2f} AED")
         
-        # عرض صورة الـ Layout والرسوم البيانية
-        col_left, col_right = st.columns([2, 1])
-        with col_left:
-            st.subheader("📐 Unit Layout")
-            if layout_url:
-                st.image(layout_url, width='stretch')
-            else:
-                st.info("📷 Layout not found for this unit type.")
-        
-        with col_right:
-            st.subheader("📊 Price Analysis")
-            fig = go.Figure(go.Pie(labels=['Selling Price', 'Gov Fees', 'Discount'], 
-                                   values=[financials['selling_price'], financials['gov_fees'], financials['disc_val']], hole=.3))
-            fig.update_layout(height=350, margin=dict(l=0, r=0, b=0, t=0))
-            st.plotly_chart(fig, width='stretch')
-
-        st.subheader("📅 Payment Schedule")
+        st.subheader("📊 Payment Schedule")
         c1, c2 = st.columns([3, 1])
-        with c1: st.dataframe(pd.DataFrame(schedule).style.format({"Amount": "{:,.2f}"}), width='stretch')
+        with c1: st.dataframe(pd.DataFrame(schedule).style.format({"Amount": "{:,.2f}"}), use_container_width=True)
         with c2:
             pdf_data = create_sales_offer_pdf(u_data, financials, schedule, layout_url, selected_plan, selected_project)
             if pdf_data:
-                st.download_button("📩 Download PDF", data=pdf_data, file_name=f"Offer_{unit_id}.pdf", type="primary", width='stretch')
+                st.download_button("📩 Download PDF", data=pdf_data, file_name=f"Offer_{unit_id}.pdf", type="primary", use_container_width=True)
+            else:
+                st.warning("⚠️ PDF generation error. Please check your internet connection.")
 
     else:
         # Comparison Mode
@@ -279,12 +248,12 @@ if df_inventory is not None:
             d2, f2, s2, l2, h2 = process_unit_data(df_inventory, u2_id, selected_plan, settings, extra_disc, selected_project, df_photos)
 
         st.divider()
-        # Comparison Chart
+        # Charts
         fig_fin = go.Figure(data=[
             go.Bar(name='Selling Price', x=[u1_id, u2_id], y=[f1['selling_price'], f2['selling_price']], marker_color='#2c3e50'),
             go.Bar(name='Gov. Fees', x=[u1_id, u2_id], y=[f1['gov_fees'], f2['gov_fees']], marker_color='#e74c3c')
         ])
-        st.plotly_chart(fig_fin, width='stretch')
+        st.plotly_chart(fig_fin, use_container_width=True)
 
         comp_df = pd.DataFrame({
             "Metric": ["Selling Price", "Area (SQFT)", "Beds", "HO Date"],
@@ -292,5 +261,3 @@ if df_inventory is not None:
             f"Unit {u2_id}": [f"{f2['selling_price']:,.0f}", d2.get('Total Area (Sq.ft)', '0'), d2.get('Bedrooms', '0'), h2.strftime('%b %Y')]
         })
         st.table(comp_df)
-else:
-    st.error("Connection Error: Check Sheets or internet.")
