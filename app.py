@@ -5,123 +5,34 @@ import requests
 from io import BytesIO
 from datetime import date
 from dateutil.relativedelta import relativedelta
+import plotly.graph_objects as go  # إضافة مكتبة الرسوم البيانية
 
-# --- 1. قاعدة بيانات المشاريع ---
+# --- 1. قاعدة بيانات المشاريع (نفسها كما هي) ---
 PROJECTS_DATABASE = {
-    "SILA MASDAR": {
-        "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=0&single=true&output=csv",
-        "gov_pct": 2.0,
-        "admin_fees": 625,
-        "res_fee": 20000
-    },
-    "KHALIFA CITY": {
-        "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1491192679&single=true&output=csv",
-        "gov_pct": 1.0,
-        "admin_fees": 625,
-        "res_fee": 20000
-    },
-    "SENSI": {
-        "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1661552566&single=true&output=csv", 
-        "gov_pct": 2.0,
-        "admin_fees": 625,
-        "res_fee": 50000
-    },
-    "RHILLS": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=517225281&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    },
-    "Reportage Oceana": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=557415114&single=true&output=csv",
-        "gov_pct": 2.5,
-        "admin_fees": 5350,
-        "res_fee": 20000 
-    },
-    "BAIA-RAHA": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=2096076774&single=true&output=csv",
-        "gov_pct": 2,
-        "admin_fees": 625,
-        "res_fee": 50000 
-    },
-    "TAORMINA1 and TAORMINA2": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=689409724&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    },
-    "BRABUS": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=523704081&single=true&output=csv",
-        "gov_pct": 2.0,
-        "admin_fees": 625,
-        "res_fee": 50000 
-    },
-    "BRABUSTH": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=56857260&single=true&output=csv",
-        "gov_pct": 2.0,
-        "admin_fees": 625,
-        "res_fee": 100000 
-    },
-    "VERDANA 6W & 6X & 6Y": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=688428190&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    },
-    "VERDANA N TH": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1654006326&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    },
-    "VERDANA N R": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1593282205&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    },
-    "VERDANA 10 R": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=833822872&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    },
-    "VERDANA 9 R": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1641737645&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    },
-    "VERDANA 8 R": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=2138617608&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    },
-    "VERDANA 7 R": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1423929833&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    },
-    "VERDANA 6 R": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=290574832&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    },
-    "VERDANA 5 R": {
-        "url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1269333085&single=true&output=csv",
-        "gov_pct": 4.0,
-        "admin_fees": 1194,
-        "res_fee": 20000 
-    }
+    "SILA MASDAR": {"url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=0&single=true&output=csv", "gov_pct": 2.0, "admin_fees": 625, "res_fee": 20000},
+    "KHALIFA CITY": {"url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1491192679&single=true&output=csv", "gov_pct": 1.0, "admin_fees": 625, "res_fee": 20000},
+    "SENSI": {"url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1661552566&single=true&output=csv", "gov_pct": 2.0, "admin_fees": 625, "res_fee": 50000},
+    "RHILLS": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=517225281&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000},
+    "Reportage Oceana": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=557415114&single=true&output=csv", "gov_pct": 2.5, "admin_fees": 5350, "res_fee": 20000},
+    "BAIA-RAHA": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=2096076774&single=true&output=csv", "gov_pct": 2, "admin_fees": 625, "res_fee": 50000},
+    "TAORMINA1 and TAORMINA2": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=689409724&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000},
+    "BRABUS": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=523704081&single=true&output=csv", "gov_pct": 2.0, "admin_fees": 625, "res_fee": 50000},
+    "BRABUSTH": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=56857260&single=true&output=csv", "gov_pct": 2.0, "admin_fees": 625, "res_fee": 100000},
+    "VERDANA 6W & 6X & 6Y": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=688428190&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000},
+    "VERDANA N TH": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1654006326&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000},
+    "VERDANA N R": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1593282205&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000},
+    "VERDANA 10 R": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=833822872&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000},
+    "VERDANA 9 R": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1641737645&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000},
+    "VERDANA 8 R": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=2138617608&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000},
+    "VERDANA 7 R": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1423929833&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000},
+    "VERDANA 6 R": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=290574832&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000},
+    "VERDANA 5 R": {"url":"https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1269333085&single=true&output=csv", "gov_pct": 4.0, "admin_fees": 1194, "res_fee": 20000}
 }
 
 PHOTO_BANK_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1714647206&single=true&output=csv"
 LOGO_URL = "https://i.ibb.co/N2SSy8kX/ICON-BLACK.jpg"
 
-# --- 2. قاموس الخطط المحدث ---
+# --- 2. قاموس الخطط المحدث (نفسه كما هي) ---
 ALL_PLANS = {
     "30% DP / 5% Disc / 70% Handover": {"dp_pct": 30, "disc": 5, "default_monthly": 0.0},
     "30% DP / 0% Disc / 70% Handover": {"dp_pct": 30, "disc": 0, "default_monthly": 0.0},
@@ -146,6 +57,9 @@ ALL_PLANS = {
     "40% DISCOUNT Plan 12 (Cash 40% Disc)": {"dp_pct": 100, "disc": 40, "default_monthly": 0.0}
 }
 
+# (الدوال المساعدة: load_google_sheet, get_handover_date, calculate_ultra_flexible_plan, create_sales_offer_pdf)
+# تبقى كما هي في كودك الأصلي...
+
 @st.cache_data
 def load_google_sheet(url):
     try:
@@ -153,17 +67,14 @@ def load_google_sheet(url):
         df.columns = df.columns.str.strip() 
         df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
         return df
-    except:
-        return None
+    except: return None
 
 def get_handover_date(unit_data):
     for col in ['Handover Date', 'Handover', 'Completion', 'Completion Date', 'HANDOVER DATE']:
         val = unit_data.get(col)
         if val and str(val).lower() != 'nan':
-            try:
-                return pd.to_datetime(val).date()
-            except:
-                continue
+            try: return pd.to_datetime(val).date()
+            except: continue
     return date(2029, 9, 1) 
 
 def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date, handover_date, res_fee):
@@ -264,135 +175,118 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
         except: pass
     return pdf.output(dest='S')
 
+# --- 3. دالة معالجة البيانات ---
+def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d, proj_key):
+    u_data = df_inv[df_inv['Plot + Unit No.'] == unit_id].iloc[0]
+    h_date = get_handover_date(u_data)
+    u_price = float(str(u_data.get('Original Price (AED)', '0')).replace(',', ''))
+    total_disc_pct = ALL_PLANS[plan_key]['disc'] + extra_d
+    s_price = (u_price * (1 - total_disc_pct/100)) + float(str(u_data.get('parking', '0')).replace(',', ''))
+    g_fees = (s_price * (PROJECTS_DATABASE[proj_key]["gov_pct"] / 100)) + PROJECTS_DATABASE[proj_key]["admin_fees"]
+    
+    fin = {'u_price': u_price, 'disc_pct': total_disc_pct, 'disc_val': u_price * (total_disc_pct/100), 'selling_price': s_price, 'gov_fees': g_fees}
+    sched = calculate_ultra_flexible_plan(s_price, ALL_PLANS[plan_key], settings_dict, date.today(), h_date, PROJECTS_DATABASE[proj_key]["res_fee"])
+    
+    # جلب صورة المخطط
+    l_url = None
+    if df_photos is not None:
+        try:
+            p_key = proj_key.split()[0].upper()
+            unit_bed = str(u_data.get('Bedrooms', '')).replace('.0', '').strip()
+            unit_sub = str(u_data.get('Sub-type', '')).upper().strip()
+            df_photos['clean_proj'] = df_photos['Project'].astype(str).str.upper().str.strip()
+            df_photos['clean_bed'] = df_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False).str.strip()
+            df_photos['clean_sub'] = df_photos['Sub-type'].astype(str).str.upper().str.strip()
+            match = df_photos[(df_photos['clean_proj'].str.contains(p_key)) & (df_photos['clean_bed'] == unit_bed) & (df_photos['clean_sub'] == unit_sub)]
+            if match.empty:
+                match = df_photos[(df_photos['clean_proj'].str.contains(p_key)) & (df_photos['clean_bed'] == unit_bed)]
+            if not match.empty: l_url = match.iloc[0]['Layout_URL']
+        except: l_url = None
+            
+    return u_data, fin, sched, l_url, h_date
+
+# --- 4. واجهة التطبيق ---
 st.set_page_config(page_title="Reportage Smart Agent", layout="wide")
 st.title("🏗️ Reportage Sales AI")
 
 with st.sidebar:
     st.header("🏢 Settings")
-    
-    # ميزة المقارنة المضافة
     comparison_mode = st.toggle("🔄 Activate Comparison Mode", value=False)
-    
     selected_project = st.selectbox("Project:", list(PROJECTS_DATABASE.keys()))
     proj_info = PROJECTS_DATABASE[selected_project]
     df_inventory = load_google_sheet(proj_info["url"])
     df_photos = load_google_sheet(PHOTO_BANK_URL)
-    
     selected_plan = st.selectbox("Plan:", list(ALL_PLANS.keys()))
     default_m_pct = ALL_PLANS[selected_plan].get("default_monthly", 1.0)
     extra_disc = st.number_input("Extra Discount %", 0.0, 15.0, 0.0)
-    
     st.subheader("Structure")
     m_pct = st.number_input("Monthly %", 0.0, 5.0, float(default_m_pct))
     dp_m = st.number_input("DP Split (Months):", 1, 24, 1)
     r_freq = st.selectbox("Recovery (Months):", [0, 6, 12])
     r_pct = st.number_input("Recovery %", 0.0, 20.0, 0.0)
 
-# دالة مساعدة لحساب بيانات وحدة معينة لتقليل تكرار الكود
-def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d):
-    u_data = df_inv[df_inv['Plot + Unit No.'] == unit_id].iloc[0]
-    h_date = get_handover_date(u_data)
-    u_price = float(str(u_data.get('Original Price (AED)', '0')).replace(',', ''))
-    total_disc_pct = ALL_PLANS[plan_key]['disc'] + extra_d
-    s_price = (u_price * (1 - total_disc_pct/100)) + float(str(u_data.get('parking', '0')).replace(',', ''))
-    g_fees = (s_price * (proj_info["gov_pct"] / 100)) + proj_info["admin_fees"]
-    
-    fin = {'u_price': u_price, 'disc_pct': total_disc_pct, 'disc_val': u_price * (total_disc_pct/100), 'selling_price': s_price, 'gov_fees': g_fees}
-    sched = calculate_ultra_flexible_plan(s_price, ALL_PLANS[plan_key], settings_dict, date.today(), h_date, proj_info["res_fee"])
-    
-    # جلب صورة المخطط
-    l_url = None
-    if df_photos is not None:
-        try:
-            p_key = selected_project.split()[0].upper()
-            unit_bed = str(u_data.get('Bedrooms', '')).replace('.0', '').strip()
-            unit_sub = str(u_data.get('Sub-type', '')).upper().strip()
-            
-            df_photos['clean_proj'] = df_photos['Project'].astype(str).str.upper().str.strip()
-            df_photos['clean_bed'] = df_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False).str.strip()
-            df_photos['clean_sub'] = df_photos['Sub-type'].astype(str).str.upper().str.strip()
-
-            match = df_photos[(df_photos['clean_proj'].str.contains(p_key)) & (df_photos['clean_bed'] == unit_bed) & (df_photos['clean_sub'] == unit_sub)]
-            if match.empty:
-                match = df_photos[(df_photos['clean_proj'].str.contains(p_key)) & (df_photos['clean_bed'] == unit_bed)]
-            if not match.empty:
-                l_url = match.iloc[0]['Layout_URL']
-        except: l_url = None
-            
-    return u_data, fin, sched, l_url, h_date
-
 if df_inventory is not None:
     settings = {'dp_months': dp_m, 'monthly_pct': m_pct, 'recovery_freq': r_freq, 'recovery_pct': r_pct}
     
     if not comparison_mode:
-        # --- الوضع العادي (وحدة واحدة) ---
+        # --- الوضع العادي ---
         unit_id = st.selectbox("Unit:", df_inventory['Plot + Unit No.'].unique())
-        unit_data, financials, schedule, layout_url, h_date = process_unit_data(df_inventory, unit_id, selected_plan, settings, extra_disc)
-        selling_price = financials['selling_price']
-        gov_fees = financials['gov_fees']
-
+        u_data, financials, schedule, layout_url, h_date = process_unit_data(df_inventory, unit_id, selected_plan, settings, extra_disc, selected_project)
+        
         st.divider()
         m1, m2, m3 = st.columns(3)
-        m1.metric("Selling Price", f"{selling_price:,.2f} AED")
-        m2.metric("Gov. Fees", f"{gov_fees:,.2f} AED", delta=f"{h_date.strftime('%b %Y')} Handover")
-        m3.metric("Total Payable", f"{selling_price + gov_fees:,.2f} AED")
-
-        st.subheader(f"📊 Payment Schedule - {unit_id}")
+        m1.metric("Selling Price", f"{financials['selling_price']:,.2f} AED")
+        m2.metric("Gov. Fees", f"{financials['gov_fees']:,.2f} AED", delta=f"{h_date.strftime('%b %Y')} HO")
+        m3.metric("Total Payable", f"{financials['selling_price'] + financials['gov_fees']:,.2f} AED")
+        
+        st.subheader("📊 Payment Schedule")
         c1, c2 = st.columns([3, 1])
-        with c1: 
-            st.dataframe(pd.DataFrame(schedule).style.format({"Amount": "{:,.2f}"}), use_container_width=True)
+        with c1: st.dataframe(pd.DataFrame(schedule).style.format({"Amount": "{:,.2f}"}), use_container_width=True)
         with c2:
-            pdf_bytes = create_sales_offer_pdf(unit_data, financials, schedule, layout_url, selected_plan, selected_project)
-            st.download_button("Download PDF", data=bytes(pdf_bytes), file_name=f"Offer_{unit_id}.pdf", use_container_width=True, type="primary")
-
-        if layout_url:
-            st.divider()
-            st.subheader("🖼️ Unit Layout")
-            _, img_col, _ = st.columns([1, 4, 1])
-            with img_col: st.image(layout_url, use_container_width=True)
-        else:
-            st.info("No Layout found in Photo Bank for this project and bedroom type.")
+            pdf_bytes = create_sales_offer_pdf(u_data, financials, schedule, layout_url, selected_plan, selected_project)
+            st.download_button("Download PDF", data=bytes(pdf_bytes), file_name=f"Offer_{unit_id}.pdf", type="primary")
 
     else:
-        # --- وضع المقارنة (وحدتين) ---
-        st.info("💡 Comparison Mode: Select two units to compare side-by-side.")
+        # --- وضع المقارنة مع الرسوم البيانية ---
+        st.info("💡 Select two units to visualize comparison")
         u_col1, u_col2 = st.columns(2)
-        
         with u_col1:
-            unit_id_1 = st.selectbox("Select Unit 1:", df_inventory['Plot + Unit No.'].unique(), key="u1")
-            data1, fin1, sched1, layout1, hd1 = process_unit_data(df_inventory, unit_id_1, selected_plan, settings, extra_disc)
-            st.metric("Price Unit 1", f"{fin1['selling_price']:,.2f} AED")
-            
+            u1_id = st.selectbox("Unit 1:", df_inventory['Plot + Unit No.'].unique(), key="u1")
+            d1, f1, s1, l1, h1 = process_unit_data(df_inventory, u1_id, selected_plan, settings, extra_disc, selected_project)
         with u_col2:
-            unit_id_2 = st.selectbox("Select Unit 2:", df_inventory['Plot + Unit No.'].unique(), key="u2")
-            data2, fin2, sched2, layout2, hd2 = process_unit_data(df_inventory, unit_id_2, selected_plan, settings, extra_disc)
-            st.metric("Price Unit 2", f"{fin2['selling_price']:,.2f} AED")
+            u2_id = st.selectbox("Unit 2:", df_inventory['Plot + Unit No.'].unique(), key="u2")
+            d2, f2, s2, l2, h2 = process_unit_data(df_inventory, u2_id, selected_plan, settings, extra_disc, selected_project)
 
         st.divider()
-        st.subheader("⚖️ Quick Comparison Table")
         
-        # إنشاء جدول مقارنة الخصائص
-        comp_data = {
-            "Feature": ["Unit No", "Type", "Bedrooms", "Total Area (SQFT)", "Price (AED)", "Gov. Fees", "Handover"],
-            f"Unit {unit_id_1}": [
-                unit_id_1, data1.get('UNIT TYPE', 'N/A'), data1.get('Bedrooms', 'N/A'), 
-                data1.get('Total Area (Sq.ft)', '0'), f"{fin1['selling_price']:,.2f}", f"{fin1['gov_fees']:,.2f}", hd1.strftime('%b %Y')
-            ],
-            f"Unit {unit_id_2}": [
-                unit_id_2, data2.get('UNIT TYPE', 'N/A'), data2.get('Bedrooms', 'N/A'), 
-                data2.get('Total Area (Sq.ft)', '0'), f"{fin2['selling_price']:,.2f}", f"{fin2['gov_fees']:,.2f}", hd2.strftime('%b %Y')
-            ]
-        }
-        st.table(pd.DataFrame(comp_data))
+        # --- 1. الرسم البياني للمقارنة المالية (Bar Chart) ---
+        st.subheader("💰 Financial Comparison")
+        fig_fin = go.Figure(data=[
+            go.Bar(name='Selling Price', x=[u1_id, u2_id], y=[f1['selling_price'], f2['selling_price']], marker_color='#2c3e50'),
+            go.Bar(name='Gov. Fees', x=[u1_id, u2_id], y=[f1['gov_fees'], f2['gov_fees']], marker_color='#e74c3c')
+        ])
+        fig_fin.update_layout(barmode='stack', height=400, title_text="Price Composition Comparison")
+        st.plotly_chart(fig_fin, use_container_width=True)
 
-        # عرض الجداول تحت بعضها للمعاينة التفصيلية
-        st.subheader("📑 Detailed Schedules")
-        tab1, tab2 = st.tabs([f"Schedule: {unit_id_1}", f"Schedule: {unit_id_2}"])
-        with tab1:
-            st.dataframe(pd.DataFrame(sched1).style.format({"Amount": "{:,.2f}"}), use_container_width=True)
-            pdf1 = create_sales_offer_pdf(data1, fin1, sched1, layout1, selected_plan, selected_project)
-            st.download_button(f"Download PDF {unit_id_1}", data=bytes(pdf1), file_name=f"Offer_{unit_id_1}.pdf")
-        with tab2:
-            st.dataframe(pd.DataFrame(sched2).style.format({"Amount": "{:,.2f}"}), use_container_width=True)
-            pdf2 = create_sales_offer_pdf(data2, fin2, sched2, layout2, selected_plan, selected_project)
-            st.download_button(f"Download PDF {unit_id_2}", data=bytes(pdf2), file_name=f"Offer_{unit_id_2}.pdf")
+        # --- 2. رسم بياني للتدفق النقدي (Cash Flow) ---
+        st.subheader("📅 Cash Flow Timeline")
+        # تحضير بيانات الجدولين للرسم
+        df_s1 = pd.DataFrame(s1)
+        df_s1 = df_s1[~df_s1['Milestone'].str.contains("TOTAL|Reservation")] # استبعاد الإجمالي للحصول على تدفق دقيق
+        df_s2 = pd.DataFrame(s2)
+        df_s2 = df_s2[~df_s2['Milestone'].str.contains("TOTAL|Reservation")]
+        
+        fig_flow = go.Figure()
+        fig_flow.add_trace(go.Scatter(x=df_s1['Date'], y=df_s1['Amount'], mode='lines+markers', name=f'Unit {u1_id}', line=dict(color='#2c3e50', width=3)))
+        fig_flow.add_trace(go.Scatter(x=df_s2['Date'], y=df_s2['Amount'], mode='lines+markers', name=f'Unit {u2_id}', line=dict(color='#3498db', width=3)))
+        
+        fig_flow.update_layout(title="Installment Amount Over Time", xaxis_title="Date", yaxis_title="Amount (AED)", height=450)
+        st.plotly_chart(fig_flow, use_container_width=True)
+
+        # جدول البيانات المقارن (القديم)
+        comp_df = pd.DataFrame({
+            "Feature": ["Price", "Area (SQFT)", "Beds", "HO Date", "Price/SQFT"],
+            f"Unit {u1_id}": [f"{f1['selling_price']:,.0f}", d1.get('Total Area (Sq.ft)', '0'), d1.get('Bedrooms', '0'), h1.strftime('%b %Y'), f"{(f1['selling_price']/float(str(d1.get('Total Area (Sq.ft)', '1')).replace(',',''))):,.0f}"],
+            f"Unit {u2_id}": [f"{f2['selling_price']:,.0f}", d2.get('Total Area (Sq.ft)', '0'), d2.get('Bedrooms', '0'), h2.strftime('%b %Y'), f"{(f2['selling_price']/float(str(d2.get('Total Area (Sq.ft)', '1')).replace(',',''))):,.0f}"]
+        })
+        st.table(comp_df)
