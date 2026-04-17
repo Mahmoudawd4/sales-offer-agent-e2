@@ -56,6 +56,7 @@ ALL_PLANS = {
     "40% DISCOUNT Plan 12 (Cash 40% Disc)": {"dp_pct": 100, "disc": 40, "default_monthly": 0.0}
 }
 
+# --- Functions ---
 @st.cache_data
 def load_google_sheet(url):
     try:
@@ -131,7 +132,7 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
         pdf.cell(95, 6, f" View: {unit_data.get('View', 'N/A')}", 0, 1)
         pdf.ln(5)
         pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
-        pdf.cell(190, 8, f" FINANCIAL SUMMARY - {plan_name}", 0, 1, 'L', True)
+        pdf.cell(190, 8, f" FINANCIAL SUMMARY", 0, 1, 'L', True)
         pdf.set_font("Arial", size=10)
         pdf.cell(100, 6, "Original Price:", 0); pdf.cell(90, 6, f"{financials['u_price']:,.2f} AED", 0, 1, 'R')
         pdf.cell(100, 6, f"Discount ({financials['disc_pct']}%):", 0); pdf.cell(90, 6, f"- {financials['disc_val']:,.2f} AED", 0, 1, 'R')
@@ -162,15 +163,13 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
                 pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R')
         if layout_url and str(layout_url) != 'nan':
             try:
-                res = requests.get(layout_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+                res = requests.get(layout_url, timeout=10)
                 img_data = BytesIO(res.content)
                 pdf.ln(10)
                 if pdf.get_y() > 180: pdf.add_page()
-                pdf.set_font("Arial", 'B', 12)
-                pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
                 pdf.image(img_data, x=30, y=pdf.get_y()+5, w=150)
             except: pass
-        return pdf.output(dest='S')
+        return pdf.output(dest='S').encode('latin-1')
     except: return None
 
 def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d, proj_key, df_photos):
@@ -188,16 +187,15 @@ def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d, proj_ke
             p_key = proj_key.split()[0].upper()
             unit_bed = str(u_data.get('Bedrooms', '')).replace('.0', '').strip()
             unit_sub = str(u_data.get('Sub-type', '')).upper().strip()
-            df_photos['clean_proj'] = df_photos['Project'].astype(str).str.upper().str.strip()
-            df_photos['clean_bed'] = df_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False).str.strip()
-            df_photos['clean_sub'] = df_photos['Sub-type'].astype(str).str.upper().str.strip()
-            match = df_photos[(df_photos['clean_proj'].str.contains(p_key)) & (df_photos['clean_bed'] == unit_bed) & (df_photos['clean_sub'] == unit_sub)]
-            if match.empty:
-                match = df_photos[(df_photos['clean_proj'].str.contains(p_key)) & (df_photos['clean_bed'] == unit_bed)]
+            temp_photos = df_photos.copy()
+            temp_photos['clean_proj'] = temp_photos['Project'].astype(str).str.upper()
+            temp_photos['clean_bed'] = temp_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False)
+            match = temp_photos[(temp_photos['clean_proj'].str.contains(p_key)) & (temp_photos['clean_bed'] == unit_bed)]
             if not match.empty: l_url = match.iloc[0]['Layout_URL']
-        except: l_url = None
+        except: pass
     return u_data, fin, sched, l_url, h_date
 
+# --- App UI ---
 st.set_page_config(page_title="Reportage Smart Agent", layout="wide")
 st.title("🏗️ Reportage Sales AI")
 
@@ -205,14 +203,12 @@ with st.sidebar:
     st.header("🏢 Settings")
     comparison_mode = st.toggle("🔄 Activate Comparison Mode", value=False)
     selected_project = st.selectbox("Project:", list(PROJECTS_DATABASE.keys()))
-    proj_info = PROJECTS_DATABASE[selected_project]
-    df_inventory = load_google_sheet(proj_info["url"])
+    df_inventory = load_google_sheet(PROJECTS_DATABASE[selected_project]["url"])
     df_photos = load_google_sheet(PHOTO_BANK_URL)
     selected_plan = st.selectbox("Plan:", list(ALL_PLANS.keys()))
-    default_m_pct = ALL_PLANS[selected_plan].get("default_monthly", 1.0)
     extra_disc = st.number_input("Extra Discount %", 0.0, 15.0, 0.0)
-    st.subheader("Structure")
-    m_pct = st.number_input("Monthly %", 0.0, 5.0, float(default_m_pct))
+    st.subheader("Payment Structure")
+    m_pct = st.number_input("Monthly %", 0.0, 5.0, float(ALL_PLANS[selected_plan].get("default_monthly", 1.0)))
     dp_m = st.number_input("DP Split (Months):", 1, 24, 1)
     r_freq = st.selectbox("Recovery (Months):", [0, 6, 12])
     r_pct = st.number_input("Recovery %", 0.0, 20.0, 0.0)
@@ -227,21 +223,22 @@ if df_inventory is not None:
         st.divider()
         m1, m2, m3 = st.columns(3)
         m1.metric("Selling Price", f"{financials['selling_price']:,.2f} AED")
-        m2.metric("Gov. Fees", f"{financials['gov_fees']:,.2f} AED", delta=f"{h_date.strftime('%b %Y')} HO")
+        m2.metric("Gov. Fees", f"{financials['gov_fees']:,.2f} AED")
         m3.metric("Total Payable", f"{financials['selling_price'] + financials['gov_fees']:,.2f} AED")
         
         st.subheader("📊 Payment Schedule")
         c1, c2 = st.columns([3, 1])
         with c1: st.dataframe(pd.DataFrame(schedule).style.format({"Amount": "{:,.2f}"}), use_container_width=True)
         with c2:
-            pdf_bytes = create_sales_offer_pdf(u_data, financials, schedule, layout_url, selected_plan, selected_project)
-            if pdf_bytes: # صمام الأمان لمنع الـ TypeError
-                st.download_button("Download PDF", data=bytes(pdf_bytes), file_name=f"Offer_{unit_id}.pdf", type="primary", use_container_width=True)
+            pdf_data = create_sales_offer_pdf(u_data, financials, schedule, layout_url, selected_plan, selected_project)
+            if pdf_data:
+                st.download_button("📩 Download PDF", data=pdf_data, file_name=f"Offer_{unit_id}.pdf", type="primary", use_container_width=True)
             else:
-                st.error("Could not generate PDF")
+                st.warning("⚠️ PDF generation error. Please check your internet connection.")
 
     else:
-        st.info("💡 Select two units to visualize comparison")
+        # Comparison Mode
+        st.info("💡 Select two units for comparison")
         u_col1, u_col2 = st.columns(2)
         with u_col1:
             u1_id = st.selectbox("Unit 1:", df_inventory['Plot + Unit No.'].unique(), key="u1")
@@ -251,25 +248,15 @@ if df_inventory is not None:
             d2, f2, s2, l2, h2 = process_unit_data(df_inventory, u2_id, selected_plan, settings, extra_disc, selected_project, df_photos)
 
         st.divider()
-        st.subheader("💰 Financial Comparison")
+        # Charts
         fig_fin = go.Figure(data=[
             go.Bar(name='Selling Price', x=[u1_id, u2_id], y=[f1['selling_price'], f2['selling_price']], marker_color='#2c3e50'),
             go.Bar(name='Gov. Fees', x=[u1_id, u2_id], y=[f1['gov_fees'], f2['gov_fees']], marker_color='#e74c3c')
         ])
         st.plotly_chart(fig_fin, use_container_width=True)
 
-        st.subheader("📅 Cash Flow Timeline")
-        df_s1 = pd.DataFrame(s1)
-        df_s1 = df_s1[~df_s1['Milestone'].str.contains("TOTAL|Reservation")]
-        df_s2 = pd.DataFrame(s2)
-        df_s2 = df_s2[~df_s2['Milestone'].str.contains("TOTAL|Reservation")]
-        fig_flow = go.Figure()
-        fig_flow.add_trace(go.Scatter(x=df_s1['Date'], y=df_s1['Amount'], mode='lines+markers', name=f'Unit {u1_id}'))
-        fig_flow.add_trace(go.Scatter(x=df_s2['Date'], y=df_s2['Amount'], mode='lines+markers', name=f'Unit {u2_id}'))
-        st.plotly_chart(fig_flow, use_container_width=True)
-
         comp_df = pd.DataFrame({
-            "Feature": ["Price", "Area (SQFT)", "Beds", "HO Date"],
+            "Metric": ["Selling Price", "Area (SQFT)", "Beds", "HO Date"],
             f"Unit {u1_id}": [f"{f1['selling_price']:,.0f}", d1.get('Total Area (Sq.ft)', '0'), d1.get('Bedrooms', '0'), h1.strftime('%b %Y')],
             f"Unit {u2_id}": [f"{f2['selling_price']:,.0f}", d2.get('Total Area (Sq.ft)', '0'), d2.get('Bedrooms', '0'), h2.strftime('%b %Y')]
         })
