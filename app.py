@@ -113,7 +113,10 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
     try:
         pdf = FPDF()
         pdf.add_page()
-        try: pdf.image(LOGO_URL, x=10, y=8, w=35)
+        try: 
+            res_logo = requests.get(LOGO_URL, timeout=5)
+            logo_img = BytesIO(res_logo.content)
+            pdf.image(logo_img, x=10, y=8, w=35)
         except: pass
         pdf.set_font("Arial", 'B', 18)
         pdf.set_text_color(44, 62, 80)
@@ -186,7 +189,6 @@ def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d, proj_ke
         try:
             p_key = proj_key.split()[0].upper()
             unit_bed = str(u_data.get('Bedrooms', '')).replace('.0', '').strip()
-            unit_sub = str(u_data.get('Sub-type', '')).upper().strip()
             temp_photos = df_photos.copy()
             temp_photos['clean_proj'] = temp_photos['Project'].astype(str).str.upper()
             temp_photos['clean_bed'] = temp_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False)
@@ -230,11 +232,12 @@ if df_inventory is not None:
         c1, c2 = st.columns([3, 1])
         with c1: st.dataframe(pd.DataFrame(schedule).style.format({"Amount": "{:,.2f}"}), use_container_width=True)
         with c2:
-            pdf_data = create_sales_offer_pdf(u_data, financials, schedule, layout_url, selected_plan, selected_project)
-            if pdf_data:
-                st.download_button("📩 Download PDF", data=pdf_data, file_name=f"Offer_{unit_id}.pdf", type="primary", use_container_width=True)
+            # صمام الأمان للـ PDF
+            pdf_bytes = create_sales_offer_pdf(u_data, financials, schedule, layout_url, selected_plan, selected_project)
+            if pdf_bytes:
+                st.download_button("📩 Download PDF", data=pdf_bytes, file_name=f"Offer_{unit_id}.pdf", type="primary", use_container_width=True)
             else:
-                st.warning("⚠️ PDF generation error. Please check your internet connection.")
+                st.warning("⚠️ Could not generate PDF. Check logo or layout image link.")
 
     else:
         # Comparison Mode
@@ -248,11 +251,12 @@ if df_inventory is not None:
             d2, f2, s2, l2, h2 = process_unit_data(df_inventory, u2_id, selected_plan, settings, extra_disc, selected_project, df_photos)
 
         st.divider()
-        # Charts
+        # Charts التفاعلي
         fig_fin = go.Figure(data=[
             go.Bar(name='Selling Price', x=[u1_id, u2_id], y=[f1['selling_price'], f2['selling_price']], marker_color='#2c3e50'),
             go.Bar(name='Gov. Fees', x=[u1_id, u2_id], y=[f1['gov_fees'], f2['gov_fees']], marker_color='#e74c3c')
         ])
+        fig_fin.update_layout(title="Financial Comparison", barmode='group')
         st.plotly_chart(fig_fin, use_container_width=True)
 
         comp_df = pd.DataFrame({
