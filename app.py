@@ -5,9 +5,9 @@ import requests
 from io import BytesIO
 from datetime import date
 from dateutil.relativedelta import relativedelta
-import plotly.graph_objects as go  # إضافة مكتبة الرسوم البيانية
+import plotly.graph_objects as go 
 
-# --- 1. قاعدة بيانات المشاريع (نفسها كما هي) ---
+# --- 1. قاعدة بيانات المشاريع ---
 PROJECTS_DATABASE = {
     "SILA MASDAR": {"url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=0&single=true&output=csv", "gov_pct": 2.0, "admin_fees": 625, "res_fee": 20000},
     "KHALIFA CITY": {"url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1491192679&single=true&output=csv", "gov_pct": 1.0, "admin_fees": 625, "res_fee": 20000},
@@ -32,7 +32,6 @@ PROJECTS_DATABASE = {
 PHOTO_BANK_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLDSBkzA1ZpD1qCRFjl4TiNWldYobalUdgwADyljTFkWMJrvVXajgFxegKWDr2SA-UcuAc8mGonW36/pub?gid=1714647206&single=true&output=csv"
 LOGO_URL = "https://i.ibb.co/N2SSy8kX/ICON-BLACK.jpg"
 
-# --- 2. قاموس الخطط المحدث (نفسه كما هي) ---
 ALL_PLANS = {
     "30% DP / 5% Disc / 70% Handover": {"dp_pct": 30, "disc": 5, "default_monthly": 0.0},
     "30% DP / 0% Disc / 70% Handover": {"dp_pct": 30, "disc": 0, "default_monthly": 0.0},
@@ -56,9 +55,6 @@ ALL_PLANS = {
     "No discount (Full in 1 month)": {"dp_pct": 100, "disc": 0, "default_monthly": 0.0},
     "40% DISCOUNT Plan 12 (Cash 40% Disc)": {"dp_pct": 100, "disc": 40, "default_monthly": 0.0}
 }
-
-# (الدوال المساعدة: load_google_sheet, get_handover_date, calculate_ultra_flexible_plan, create_sales_offer_pdf)
-# تبقى كما هي في كودك الأصلي...
 
 @st.cache_data
 def load_google_sheet(url):
@@ -113,81 +109,79 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
     return plan
 
 def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_name, project_name):
-    pdf = FPDF()
-    pdf.add_page()
-    try: pdf.image(LOGO_URL, x=10, y=8, w=35)
-    except: pass
-    pdf.set_font("Arial", 'B', 18)
-    pdf.set_text_color(44, 62, 80)
-    pdf.cell(0, 15, f"SALES OFFER - {project_name}", ln=True, align='C')
-    pdf.ln(5)
-    pdf.set_xy(10, 35)
-    pdf.set_fill_color(240, 240, 240)
-    pdf.set_font("Arial", 'B', 11)
-    pdf.cell(190, 8, " UNIT SPECIFICATIONS", 0, 1, 'L', True)
-    pdf.set_font("Arial", size=10); pdf.set_text_color(0)
-    pdf.cell(95, 6, f" Unit No: {unit_data.get('Plot + Unit No.', 'N/A')}", 0, 0)
-    pdf.cell(95, 6, f" Sub-type: {unit_data.get('Sub-type', 'N/A')}", 0, 1)
-    pdf.cell(95, 6, f" Unit Type: {unit_data.get('UNIT TYPE', 'N/A')}", 0, 0)
-    pdf.cell(95, 6, f" Total Area: {unit_data.get('Total Area (Sq.ft)', '0')} SQFT", 0, 1)
-    pdf.cell(95, 6, f" Bedrooms: {unit_data.get('Bedrooms', 'N/A')}", 0, 0)
-    pdf.cell(95, 6, f" View: {unit_data.get('View', 'N/A')}", 0, 1)
-    pdf.ln(5)
-    pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
-    pdf.cell(190, 8, f" FINANCIAL SUMMARY - {plan_name}", 0, 1, 'L', True)
-    pdf.set_font("Arial", size=10)
-    pdf.cell(100, 6, "Original Price:", 0); pdf.cell(90, 6, f"{financials['u_price']:,.2f} AED", 0, 1, 'R')
-    pdf.cell(100, 6, f"Discount ({financials['disc_pct']}%):", 0); pdf.cell(90, 6, f"- {financials['disc_val']:,.2f} AED", 0, 1, 'R')
-    pdf.cell(100, 6, "Selling Price:", 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
-    pdf.set_text_color(200, 0, 0)
-    pdf.cell(100, 6, "Gov. Fees (Registration):", 0); pdf.cell(90, 6, f"{financials['gov_fees']:,.2f} AED", 0, 1, 'R')
-    pdf.set_text_color(0)
-    pdf.set_font("Arial", 'B', 10)
-    total_all = financials['selling_price'] + financials['gov_fees']
-    pdf.cell(100, 8, "Total Amount Payable:", 0); pdf.cell(90, 8, f"{total_all:,.2f} AED", 0, 1, 'R')
-    pdf.ln(8)
-    pdf.set_font("Arial", 'B', 10); pdf.set_fill_color(44, 62, 80); pdf.set_text_color(255, 255, 255)
-    pdf.cell(70, 10, " Milestone", 1, 0, 'L', True); pdf.cell(40, 10, " Date", 1, 0, 'C', True)
-    pdf.cell(20, 10, " %", 1, 0, 'C', True); pdf.cell(60, 10, " Amount (AED)", 1, 1, 'R', True)
-    pdf.set_text_color(0); pdf.set_font("Arial", size=9)
-    for row in schedule:
-        if row['Milestone'] == "TOTAL INSTALLMENT":
-            pdf.set_font("Arial", 'B', 9); pdf.set_fill_color(220, 220, 220)
-            pdf.cell(70, 8, f" {row['Milestone']}", 1, 0, 'L', True)
-            pdf.cell(40, 8, f" {row['Date']}", 1, 0, 'C', True)
-            pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C', True)
-            pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R', True)
-            pdf.set_font("Arial", size=9); pdf.set_fill_color(255, 255, 255)
-        else:
-            pdf.cell(70, 8, f" {row['Milestone']}", 1)
-            pdf.cell(40, 8, f" {row['Date']}", 1, 0, 'C')
-            pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C')
-            pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R')
-    if layout_url and str(layout_url) != 'nan':
-        try:
-            res = requests.get(layout_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-            img_data = BytesIO(res.content)
-            pdf.ln(10)
-            if pdf.get_y() > 180: pdf.add_page()
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
-            pdf.image(img_data, x=30, y=pdf.get_y()+5, w=150)
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        try: pdf.image(LOGO_URL, x=10, y=8, w=35)
         except: pass
-    return pdf.output(dest='S')
+        pdf.set_font("Arial", 'B', 18)
+        pdf.set_text_color(44, 62, 80)
+        pdf.cell(0, 15, f"SALES OFFER - {project_name}", ln=True, align='C')
+        pdf.ln(5)
+        pdf.set_xy(10, 35)
+        pdf.set_fill_color(240, 240, 240)
+        pdf.set_font("Arial", 'B', 11)
+        pdf.cell(190, 8, " UNIT SPECIFICATIONS", 0, 1, 'L', True)
+        pdf.set_font("Arial", size=10); pdf.set_text_color(0)
+        pdf.cell(95, 6, f" Unit No: {unit_data.get('Plot + Unit No.', 'N/A')}", 0, 0)
+        pdf.cell(95, 6, f" Sub-type: {unit_data.get('Sub-type', 'N/A')}", 0, 1)
+        pdf.cell(95, 6, f" Unit Type: {unit_data.get('UNIT TYPE', 'N/A')}", 0, 0)
+        pdf.cell(95, 6, f" Total Area: {unit_data.get('Total Area (Sq.ft)', '0')} SQFT", 0, 1)
+        pdf.cell(95, 6, f" Bedrooms: {unit_data.get('Bedrooms', 'N/A')}", 0, 0)
+        pdf.cell(95, 6, f" View: {unit_data.get('View', 'N/A')}", 0, 1)
+        pdf.ln(5)
+        pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
+        pdf.cell(190, 8, f" FINANCIAL SUMMARY - {plan_name}", 0, 1, 'L', True)
+        pdf.set_font("Arial", size=10)
+        pdf.cell(100, 6, "Original Price:", 0); pdf.cell(90, 6, f"{financials['u_price']:,.2f} AED", 0, 1, 'R')
+        pdf.cell(100, 6, f"Discount ({financials['disc_pct']}%):", 0); pdf.cell(90, 6, f"- {financials['disc_val']:,.2f} AED", 0, 1, 'R')
+        pdf.cell(100, 6, "Selling Price:", 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
+        pdf.set_text_color(200, 0, 0)
+        pdf.cell(100, 6, "Gov. Fees (Registration):", 0); pdf.cell(90, 6, f"{financials['gov_fees']:,.2f} AED", 0, 1, 'R')
+        pdf.set_text_color(0)
+        pdf.set_font("Arial", 'B', 10)
+        total_all = financials['selling_price'] + financials['gov_fees']
+        pdf.cell(100, 8, "Total Amount Payable:", 0); pdf.cell(90, 8, f"{total_all:,.2f} AED", 0, 1, 'R')
+        pdf.ln(8)
+        pdf.set_font("Arial", 'B', 10); pdf.set_fill_color(44, 62, 80); pdf.set_text_color(255, 255, 255)
+        pdf.cell(70, 10, " Milestone", 1, 0, 'L', True); pdf.cell(40, 10, " Date", 1, 0, 'C', True)
+        pdf.cell(20, 10, " %", 1, 0, 'C', True); pdf.cell(60, 10, " Amount (AED)", 1, 1, 'R', True)
+        pdf.set_text_color(0); pdf.set_font("Arial", size=9)
+        for row in schedule:
+            if row['Milestone'] == "TOTAL INSTALLMENT":
+                pdf.set_font("Arial", 'B', 9); pdf.set_fill_color(220, 220, 220)
+                pdf.cell(70, 8, f" {row['Milestone']}", 1, 0, 'L', True)
+                pdf.cell(40, 8, f" {row['Date']}", 1, 0, 'C', True)
+                pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C', True)
+                pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R', True)
+                pdf.set_font("Arial", size=9); pdf.set_fill_color(255, 255, 255)
+            else:
+                pdf.cell(70, 8, f" {row['Milestone']}", 1)
+                pdf.cell(40, 8, f" {row['Date']}", 1, 0, 'C')
+                pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C')
+                pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R')
+        if layout_url and str(layout_url) != 'nan':
+            try:
+                res = requests.get(layout_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+                img_data = BytesIO(res.content)
+                pdf.ln(10)
+                if pdf.get_y() > 180: pdf.add_page()
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
+                pdf.image(img_data, x=30, y=pdf.get_y()+5, w=150)
+            except: pass
+        return pdf.output(dest='S')
+    except: return None
 
-# --- 3. دالة معالجة البيانات ---
-def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d, proj_key):
+def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d, proj_key, df_photos):
     u_data = df_inv[df_inv['Plot + Unit No.'] == unit_id].iloc[0]
     h_date = get_handover_date(u_data)
     u_price = float(str(u_data.get('Original Price (AED)', '0')).replace(',', ''))
     total_disc_pct = ALL_PLANS[plan_key]['disc'] + extra_d
     s_price = (u_price * (1 - total_disc_pct/100)) + float(str(u_data.get('parking', '0')).replace(',', ''))
     g_fees = (s_price * (PROJECTS_DATABASE[proj_key]["gov_pct"] / 100)) + PROJECTS_DATABASE[proj_key]["admin_fees"]
-    
     fin = {'u_price': u_price, 'disc_pct': total_disc_pct, 'disc_val': u_price * (total_disc_pct/100), 'selling_price': s_price, 'gov_fees': g_fees}
     sched = calculate_ultra_flexible_plan(s_price, ALL_PLANS[plan_key], settings_dict, date.today(), h_date, PROJECTS_DATABASE[proj_key]["res_fee"])
-    
-    # جلب صورة المخطط
     l_url = None
     if df_photos is not None:
         try:
@@ -202,10 +196,8 @@ def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d, proj_ke
                 match = df_photos[(df_photos['clean_proj'].str.contains(p_key)) & (df_photos['clean_bed'] == unit_bed)]
             if not match.empty: l_url = match.iloc[0]['Layout_URL']
         except: l_url = None
-            
     return u_data, fin, sched, l_url, h_date
 
-# --- 4. واجهة التطبيق ---
 st.set_page_config(page_title="Reportage Smart Agent", layout="wide")
 st.title("🏗️ Reportage Sales AI")
 
@@ -229,9 +221,8 @@ if df_inventory is not None:
     settings = {'dp_months': dp_m, 'monthly_pct': m_pct, 'recovery_freq': r_freq, 'recovery_pct': r_pct}
     
     if not comparison_mode:
-        # --- الوضع العادي ---
         unit_id = st.selectbox("Unit:", df_inventory['Plot + Unit No.'].unique())
-        u_data, financials, schedule, layout_url, h_date = process_unit_data(df_inventory, unit_id, selected_plan, settings, extra_disc, selected_project)
+        u_data, financials, schedule, layout_url, h_date = process_unit_data(df_inventory, unit_id, selected_plan, settings, extra_disc, selected_project, df_photos)
         
         st.divider()
         m1, m2, m3 = st.columns(3)
@@ -244,49 +235,42 @@ if df_inventory is not None:
         with c1: st.dataframe(pd.DataFrame(schedule).style.format({"Amount": "{:,.2f}"}), use_container_width=True)
         with c2:
             pdf_bytes = create_sales_offer_pdf(u_data, financials, schedule, layout_url, selected_plan, selected_project)
-            st.download_button("Download PDF", data=bytes(pdf_bytes), file_name=f"Offer_{unit_id}.pdf", type="primary")
+            if pdf_bytes: # صمام الأمان لمنع الـ TypeError
+                st.download_button("Download PDF", data=bytes(pdf_bytes), file_name=f"Offer_{unit_id}.pdf", type="primary", use_container_width=True)
+            else:
+                st.error("Could not generate PDF")
 
     else:
-        # --- وضع المقارنة مع الرسوم البيانية ---
         st.info("💡 Select two units to visualize comparison")
         u_col1, u_col2 = st.columns(2)
         with u_col1:
             u1_id = st.selectbox("Unit 1:", df_inventory['Plot + Unit No.'].unique(), key="u1")
-            d1, f1, s1, l1, h1 = process_unit_data(df_inventory, u1_id, selected_plan, settings, extra_disc, selected_project)
+            d1, f1, s1, l1, h1 = process_unit_data(df_inventory, u1_id, selected_plan, settings, extra_disc, selected_project, df_photos)
         with u_col2:
             u2_id = st.selectbox("Unit 2:", df_inventory['Plot + Unit No.'].unique(), key="u2")
-            d2, f2, s2, l2, h2 = process_unit_data(df_inventory, u2_id, selected_plan, settings, extra_disc, selected_project)
+            d2, f2, s2, l2, h2 = process_unit_data(df_inventory, u2_id, selected_plan, settings, extra_disc, selected_project, df_photos)
 
         st.divider()
-        
-        # --- 1. الرسم البياني للمقارنة المالية (Bar Chart) ---
         st.subheader("💰 Financial Comparison")
         fig_fin = go.Figure(data=[
             go.Bar(name='Selling Price', x=[u1_id, u2_id], y=[f1['selling_price'], f2['selling_price']], marker_color='#2c3e50'),
             go.Bar(name='Gov. Fees', x=[u1_id, u2_id], y=[f1['gov_fees'], f2['gov_fees']], marker_color='#e74c3c')
         ])
-        fig_fin.update_layout(barmode='stack', height=400, title_text="Price Composition Comparison")
         st.plotly_chart(fig_fin, use_container_width=True)
 
-        # --- 2. رسم بياني للتدفق النقدي (Cash Flow) ---
         st.subheader("📅 Cash Flow Timeline")
-        # تحضير بيانات الجدولين للرسم
         df_s1 = pd.DataFrame(s1)
-        df_s1 = df_s1[~df_s1['Milestone'].str.contains("TOTAL|Reservation")] # استبعاد الإجمالي للحصول على تدفق دقيق
+        df_s1 = df_s1[~df_s1['Milestone'].str.contains("TOTAL|Reservation")]
         df_s2 = pd.DataFrame(s2)
         df_s2 = df_s2[~df_s2['Milestone'].str.contains("TOTAL|Reservation")]
-        
         fig_flow = go.Figure()
-        fig_flow.add_trace(go.Scatter(x=df_s1['Date'], y=df_s1['Amount'], mode='lines+markers', name=f'Unit {u1_id}', line=dict(color='#2c3e50', width=3)))
-        fig_flow.add_trace(go.Scatter(x=df_s2['Date'], y=df_s2['Amount'], mode='lines+markers', name=f'Unit {u2_id}', line=dict(color='#3498db', width=3)))
-        
-        fig_flow.update_layout(title="Installment Amount Over Time", xaxis_title="Date", yaxis_title="Amount (AED)", height=450)
+        fig_flow.add_trace(go.Scatter(x=df_s1['Date'], y=df_s1['Amount'], mode='lines+markers', name=f'Unit {u1_id}'))
+        fig_flow.add_trace(go.Scatter(x=df_s2['Date'], y=df_s2['Amount'], mode='lines+markers', name=f'Unit {u2_id}'))
         st.plotly_chart(fig_flow, use_container_width=True)
 
-        # جدول البيانات المقارن (القديم)
         comp_df = pd.DataFrame({
-            "Feature": ["Price", "Area (SQFT)", "Beds", "HO Date", "Price/SQFT"],
-            f"Unit {u1_id}": [f"{f1['selling_price']:,.0f}", d1.get('Total Area (Sq.ft)', '0'), d1.get('Bedrooms', '0'), h1.strftime('%b %Y'), f"{(f1['selling_price']/float(str(d1.get('Total Area (Sq.ft)', '1')).replace(',',''))):,.0f}"],
-            f"Unit {u2_id}": [f"{f2['selling_price']:,.0f}", d2.get('Total Area (Sq.ft)', '0'), d2.get('Bedrooms', '0'), h2.strftime('%b %Y'), f"{(f2['selling_price']/float(str(d2.get('Total Area (Sq.ft)', '1')).replace(',',''))):,.0f}"]
+            "Feature": ["Price", "Area (SQFT)", "Beds", "HO Date"],
+            f"Unit {u1_id}": [f"{f1['selling_price']:,.0f}", d1.get('Total Area (Sq.ft)', '0'), d1.get('Bedrooms', '0'), h1.strftime('%b %Y')],
+            f"Unit {u2_id}": [f"{f2['selling_price']:,.0f}", d2.get('Total Area (Sq.ft)', '0'), d2.get('Bedrooms', '0'), h2.strftime('%b %Y')]
         })
         st.table(comp_df)
