@@ -118,47 +118,78 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
     try:
         pdf = FPDF()
         pdf.add_page()
-        try: pdf.image(LOGO_URL, x=10, y=8, w=35)
+        
+        # 1. الشعار
+        try:
+            res_logo = requests.get(LOGO_URL, timeout=5)
+            logo_img = BytesIO(res_logo.content)
+            pdf.image(logo_img, x=10, y=8, w=35)
         except: pass
+
         pdf.set_font("Arial", 'B', 18)
         pdf.cell(0, 15, f"SALES OFFER - {project_name}", ln=True, align='C')
         pdf.ln(5)
-        pdf.set_xy(10, 35)
+
+        # 2. مواصفات الوحدة (UNIT SPECIFICATIONS)
         pdf.set_fill_color(240, 240, 240)
         pdf.set_font("Arial", 'B', 11)
         pdf.cell(190, 8, " UNIT SPECIFICATIONS", 0, 1, 'L', True)
         pdf.set_font("Arial", size=10)
+        
         pdf.cell(95, 6, f" Unit No: {unit_data.get('Plot + Unit No.', 'N/A')}", 0, 0)
         pdf.cell(95, 6, f" Sub-type: {unit_data.get('Sub-type', 'N/A')}", 0, 1)
         pdf.cell(95, 6, f" Unit Type: {unit_data.get('UNIT TYPE', 'N/A')}", 0, 0)
         pdf.cell(95, 6, f" Total Area: {unit_data.get('Total Area (Sq.ft)', '0')} SQFT", 0, 1)
+        pdf.cell(95, 6, f" Bedrooms: {unit_data.get('Bedrooms', 'N/A')}", 0, 0)
+        pdf.cell(95, 6, f" View: {unit_data.get('View', 'N/A')}", 0, 1)
         pdf.ln(5)
+
+        # 3. الملخص المالي (FINANCIAL SUMMARY)
         pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
-        pdf.cell(190, 8, f" FINANCIAL SUMMARY", 0, 1, 'L', True)
+        pdf.cell(190, 8, " FINANCIAL SUMMARY", 0, 1, 'L', True)
         pdf.set_font("Arial", size=10)
+        pdf.cell(100, 6, "Original Price:", 0); pdf.cell(90, 6, f"{financials['u_price']:,.2f} AED", 0, 1, 'R')
+        pdf.cell(100, 6, f"Discount ({financials['disc_pct']}%):", 0); pdf.cell(90, 6, f"- {financials['disc_val']:,.2f} AED", 0, 1, 'R')
         pdf.cell(100, 6, "Selling Price:", 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
-        pdf.ln(8)
+        pdf.set_text_color(200, 0, 0)
+        pdf.cell(100, 6, "Gov. Fees (Registration):", 0); pdf.cell(90, 6, f"{financials['gov_fees']:,.2f} AED", 0, 1, 'R')
+        pdf.set_text_color(0); pdf.set_font("Arial", 'B', 10)
+        total_all = financials['selling_price'] + financials['gov_fees']
+        pdf.cell(100, 8, "Total Amount Payable:", 0); pdf.cell(90, 8, f"{total_all:,.2f} AED", 0, 1, 'R')
+        pdf.ln(5)
+
+        # 4. جدول الدفعات
         pdf.set_font("Arial", 'B', 10); pdf.set_fill_color(44, 62, 80); pdf.set_text_color(255, 255, 255)
-        pdf.cell(70, 10, " Milestone", 1, 0, 'L', True); pdf.cell(40, 10, " Date", 1, 0, 'C', True)
-        pdf.cell(20, 10, " %", 1, 0, 'C', True); pdf.cell(60, 10, " Amount (AED)", 1, 1, 'R', True)
-        pdf.set_text_color(0); pdf.set_font("Arial", size=9)
+        pdf.cell(70, 8, " Milestone", 1, 0, 'L', True); pdf.cell(40, 8, " Date", 1, 0, 'C', True)
+        pdf.cell(20, 8, " %", 1, 0, 'C', True); pdf.cell(60, 8, " Amount (AED)", 1, 1, 'R', True)
+        pdf.set_text_color(0); pdf.set_font("Arial", size=8)
+        
         for row in schedule:
-            pdf.cell(70, 8, f" {row['Milestone']}", 1)
-            pdf.cell(40, 8, f" {row['Date']}", 1, 0, 'C')
-            pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C')
-            pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R')
-        
-        # إضافة صورة الـ Layout في الـ PDF
-        if layout_url and str(layout_url) != 'nan':
+            if row['Milestone'] == "TOTAL INSTALLMENT": continue # تخطي سطر المجموع لتوفير مساحة
+            pdf.cell(70, 7, f" {row['Milestone']}", 1)
+            pdf.cell(40, 7, f" {row['Date']}", 1, 0, 'C')
+            pdf.cell(20, 7, f" {row['Percent']}", 1, 0, 'C')
+            pdf.cell(60, 7, f"{row['Amount']:,.2f} ", 1, 1, 'R')
+
+        # 5. إضافة صورة الـ Layout (هنا يكمن الإصلاح)
+        if layout_url and str(layout_url).startswith("http"):
             try:
-                res = requests.get(layout_url, timeout=10)
-                img_data = BytesIO(res.content)
-                if pdf.get_y() > 180: pdf.add_page()
-                pdf.image(img_data, x=30, y=pdf.get_y()+10, w=150)
-            except: pass
-        
+                pdf.add_page() # إضافة صفحة جديدة للصورة لضمان عدم تداخلها
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "UNIT LAYOUT / TYPE", ln=True, align='C')
+                
+                response = requests.get(layout_url, timeout=15)
+                img_data = BytesIO(response.content)
+                # وضع الصورة في منتصف الصفحة
+                pdf.image(img_data, x=20, y=30, w=170) 
+            except Exception as e:
+                print(f"Image Error: {e}")
+
+        # تصدير الملف بترميز صحيح
         return pdf.output(dest='S').encode('latin-1', 'replace')
-    except: return None
+    except Exception as e:
+        print(f"PDF Error: {e}")
+        return None
 
 def process_unit_data(df_inv, unit_id, plan_key, settings_dict, extra_d, proj_key, df_photos):
     u_data = df_inv[df_inv['Plot + Unit No.'] == unit_id].iloc[0]
