@@ -5,18 +5,21 @@ import requests
 from io import BytesIO
 from datetime import date
 from dateutil.relativedelta import relativedelta
-import re  # <--- أضيف هنا لاستخراج أرقام المعرفات من الروابط
+import re
+from PIL import Image  # <--- إضافة مهمة جداً لمعالجة الصور بأمان
 
 # --- دالة مساعدة لتحويل روابط Google Drive إلى روابط صور مباشرة ---
 def convert_to_direct_image_url(url):
     if not url or str(url) == 'nan':
         return None
     url = str(url).strip()
-    # تحويل رابط Google Drive عادي إلى رابط تحميل مباشر للصور
-    drive_match = re.search(r'(?:file/d/|id=)([\w-]+)', url)
+    
+    # تحويل رابط Google Drive عادي أو مشاركة إلى رابط استعراض مباشر
+    drive_match = re.search(r'(?:file/d/|id=|folders/)([\w-]+)', url)
     if drive_match:
         file_id = drive_match.group(1)
-        return f"https://drive.google.com/uc?id={file_id}"
+        return f"https://drive.google.com/thumbnail?id={file_id}&sz=w1000"
+    
     return url
 
 # --- 1. قاعدة بيانات المشاريع ---
@@ -313,14 +316,11 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
     monthly_pct = settings['monthly_pct'] / 100
     curr_d = start_date + relativedelta(months=max(1, dp_months))
 
-    # Recovery Settings
     recovery_freq = settings.get("recovery_freq", 0)
     recovery_pct = settings.get("recovery_pct", 0)
 
     if ho_pct > 0 and total_months > 0:
-        # >>> نظام الخطط المحجوزة بعدد شهور محدد (مثلاً 100 شهر) <<<
         for m in range(1, total_months + 1):
-            # القسط الشهرى العادى
             amt = selling_price * monthly_pct
             plan.append({
                 "Milestone": f"Monthly Installment {m}",
@@ -329,7 +329,6 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
                 "Amount": amt
             })
 
-            # Recovery Payment
             if recovery_freq > 0 and recovery_pct > 0:
                 if m % recovery_freq == 0:
                     recovery_amount = selling_price * (recovery_pct / 100)
@@ -340,7 +339,6 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
                         "Amount": recovery_amount
                     })
 
-            # Handover Payment
             if curr_d.year == handover_date.year and curr_d.month == handover_date.month:
                 ho_amount = selling_price * (ho_pct / 100)
                 plan.append({
@@ -352,7 +350,6 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
 
             curr_d += relativedelta(months=1)
     else:
-        # >>> نظام الخطط المرتبطة بتاريخ الاستلام <<<
         m_count = 1
         while curr_d < handover_date:
             amt = selling_price * monthly_pct
@@ -364,7 +361,6 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
                     "Amount": amt
                 })
 
-            # إضافة الـ Recovery للخطط العادية
             if recovery_freq > 0 and recovery_pct > 0:
                 if m_count % recovery_freq == 0:
                     recovery_amount = selling_price * (recovery_pct / 100)
@@ -378,7 +374,6 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
             m_count += 1
             curr_d += relativedelta(months=1)
 
-        # حساب المتبقي (Balance) كدفعة أخيرة عند الاستلام للخطط القديمة
         total_so_far = sum(item['Amount'] for item in plan)
         handover_amt = selling_price - total_so_far
         if handover_amt > 1:
@@ -459,19 +454,26 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
             pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C')
             pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R')
 
-    # <--- تحسين تحميل وتضمين صورة المخطط داخل ملف ה-PDF --->
+    # <--- تحسين جذرى لتحميل وتضمين الصور من Google Drive داخل PDF --->
     if layout_url:
         try:
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
             res = requests.get(layout_url, headers=headers, timeout=10)
             if res.status_code == 200:
-                img_data = BytesIO(res.content)
-                pdf.ln(10)
-                if pdf.get_y() > 180: pdf.add_page()
-                pdf.set_font("Arial", 'B', 12)
+                img = Image.open(BytesIO(res.content))
+                img = img.convert('RGB')  # تحويل الصورة إلى RGB لضمان التوافق التام مع FPDF
+                
+                # حفظ الصورة مؤقتاً في الذاكرة كـ JPEG
+                img_io = BytesIO()
+                img.save(img_io, 'JPEG', quality=85)
+                img_io.seek(0)
+
+                pdf.add_page() # إضافة صفحة جديدة مخصصة للصورة لضمان التنسيق
+                pdf.set_font("Arial", 'B', 14)
                 pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
-                pdf.image(img_data, x=30, y=pdf.get_y()+5, w=150)
-        except Exception: 
+                pdf.ln(5)
+                pdf.image(img_io, x=15, y=pdf.get_y(), w=180)
+        except Exception as e:
             pass
 
     return pdf.output(dest='S')
@@ -522,7 +524,7 @@ if df_inventory is not None:
     settings = {'dp_months': dp_m, 'monthly_pct': m_pct, 'recovery_freq': r_freq, 'recovery_pct': r_pct}
     schedule = calculate_ultra_flexible_plan(selling_price, ALL_PLANS[selected_plan], settings, date.today(), h_date, proj_info["res_fee"])
     
-    # <--- البحث المطور والذكي عن الصور مع تنظيف النصوص وتحويل الروابط --->
+    # <--- مطابقة الصور والبحث عنها --->
     layout_url = None
     if df_photos is not None:
         try:
@@ -535,14 +537,14 @@ if df_inventory is not None:
             proj_name = selected_project.upper().strip()
             p_key = selected_project.split()[0].upper()
 
-            # 1. مطابقة دقيقة باسم المشروع بالكامل + الغرف + Sub-type
+            # 1. مطابقة دقيقة
             match = df_photos[
                 (df_photos['clean_proj'] == proj_name) & 
                 (df_photos['clean_bed'] == unit_bed) & 
                 (df_photos['clean_sub'] == unit_sub)
             ]
 
-            # 2. مطابقة بالاسم الأول للمشروع + الغرف + Sub-type
+            # 2. مطابقة جزئية
             if match.empty:
                 match = df_photos[
                     (df_photos['clean_proj'].str.contains(p_key, na=False)) & 
@@ -550,7 +552,7 @@ if df_inventory is not None:
                     (df_photos['clean_sub'] == unit_sub)
                 ]
 
-            # 3. مطابقة بالاسم الأول للمشروع + عدد الغرف فقط
+            # 3. مطابقة الغرف فقط
             if match.empty:
                 match = df_photos[
                     (df_photos['clean_proj'].str.contains(p_key, na=False)) & 
@@ -559,10 +561,9 @@ if df_inventory is not None:
 
             if not match.empty:
                 raw_url = match.iloc[0]['Layout_URL']
-                # تحويل الرابط تلقائياً إلى رابط مباشر يفتح كصورة
                 layout_url = convert_to_direct_image_url(raw_url)
 
-        except Exception as e: 
+        except Exception: 
             layout_url = None
 
     st.divider()
