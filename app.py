@@ -257,20 +257,26 @@ ALL_PLANS = {
     }
 }
 
-# --- دالة تحويل روابط Google Drive إلى روابط تنزيل مباشرة ---
+# --- 3. دالة تحويل روابط Google Drive إلى رابط Thumbnail بدقة عاليـة جـداً ---
 def convert_to_direct_url(url):
     if not url or pd.isna(url):
         return None
     url = str(url).strip()
-    # التعامل مع روابط Google Drive
+    
+    # البحث عن File ID في رابط Google Drive
+    file_id = None
     match = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', url)
     if match:
         file_id = match.group(1)
-        return f'https://drive.google.com/uc?export=download&id={file_id}'
-    match_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
-    if 'drive.google.com' in url and match_id:
-        file_id = match_id.group(1)
-        return f'https://drive.google.com/uc?export=download&id={file_id}'
+    else:
+        match_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
+        if 'drive.google.com' in url and match_id:
+            file_id = match_id.group(1)
+
+    if file_id:
+        # رابط Thumbnail بدقة أفقية تصل إلى 2000 بكسل يفتح كصورة مباشرة دائماً
+        return f"https://drive.google.com/thumbnail?id={file_id}&sz=w2000"
+        
     return url
 
 @st.cache_data
@@ -360,7 +366,6 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
     dp_total = sum(item['Amount'] for item in plan if "DP" in item['Milestone'] or "Reservation" in item['Milestone'])
     inst_total = sum(item['Amount'] for item in plan if "Monthly" in item['Milestone'] or "Recovery" in item['Milestone'])
     
-    # تحسين تجميع الأقساط والمقدم ليكون شاملاً
     total_installment_val = dp_total + inst_total
     plan.append({"Milestone": "TOTAL INSTALLMENT", "Date": "---", "Percent": "---", "Amount": total_installment_val})
 
@@ -372,8 +377,11 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
 def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_name, project_name):
     pdf = FPDF()
     pdf.add_page()
+
+    # شعار الشركة
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try: 
-        resp = requests.get(LOGO_URL, timeout=5)
+        resp = requests.get(LOGO_URL, headers=headers, timeout=5)
         if resp.status_code == 200:
             pdf.image(BytesIO(resp.content), x=10, y=8, w=35)
     except: 
@@ -435,16 +443,17 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
             pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C')
             pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R')
 
-    # جلب رسم الكروكي (Layout Image)
+    # جلب رسم الكروكي (Layout Image) بآلية آمنة ومضمونة
     if layout_url:
         try:
-            res = requests.get(layout_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+            res = requests.get(layout_url, headers=headers, timeout=10)
             if res.status_code == 200:
-                img_data = BytesIO(res.content)
+                img_bytes = BytesIO(res.content)
                 pdf.add_page()
                 pdf.set_font("Arial", 'B', 12)
                 pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
-                pdf.image(img_data, x=20, y=pdf.get_y()+5, w=170)
+                # رسم الصورة في الصفحة التالية
+                pdf.image(img_bytes, x=15, y=pdf.get_y()+5, w=180)
         except Exception: 
             pass
 
@@ -515,11 +524,10 @@ if df_inventory is not None:
     
     schedule = calculate_ultra_flexible_plan(selling_price, ALL_PLANS[selected_plan], settings, date.today(), h_date, proj_info["res_fee"])
     
-    # --- البحث الذكي عن الصور وإصلاح الروابط ---
+    # --- البحث عن الصورة وتطبيق الرابط المباشر Thumbnail ---
     layout_url = None
     if df_photos is not None:
         try:
-            # التحقق من وجود عمود الصور بمرونة (Layout_URL أو Layout أو Photo)
             layout_col = None
             for col in ['Layout_URL', 'Layout', 'Photo', 'URL', 'IMAGE']:
                 if col in df_photos.columns:
@@ -575,8 +583,13 @@ if df_inventory is not None:
         _, img_col, _ = st.columns([1, 4, 1])
         with img_col: 
             try:
-                st.image(layout_url, use_container_width=True)
+                # استخدام requests لجلب مصفوفة البايتات لتأكيد تحميل الصورة حتى لو فرض المتصفح حظراً
+                res = requests.get(layout_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+                if res.status_code == 200:
+                    st.image(BytesIO(res.content), use_container_width=True)
+                else:
+                    st.image(layout_url, use_container_width=True)
             except Exception:
-                st.error("Could not load image directly from URL. Please check image permissions.")
+                st.error("Could not render layout image.")
     else:
         st.info("No Layout found in Photo Bank for this project and bedroom type.")
