@@ -5,6 +5,19 @@ import requests
 from io import BytesIO
 from datetime import date
 from dateutil.relativedelta import relativedelta
+import re  # <--- أضيف هنا لاستخراج أرقام المعرفات من الروابط
+
+# --- دالة مساعدة لتحويل روابط Google Drive إلى روابط صور مباشرة ---
+def convert_to_direct_image_url(url):
+    if not url or str(url) == 'nan':
+        return None
+    url = str(url).strip()
+    # تحويل رابط Google Drive عادي إلى رابط تحميل مباشر للصور
+    drive_match = re.search(r'(?:file/d/|id=)([\w-]+)', url)
+    if drive_match:
+        file_id = drive_match.group(1)
+        return f"https://drive.google.com/uc?id={file_id}"
+    return url
 
 # --- 1. قاعدة بيانات المشاريع ---
 PROJECTS_DATABASE = {
@@ -416,7 +429,6 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
     pdf.cell(100, 6, "Original Price:", 0); pdf.cell(90, 6, f"{financials['u_price']:,.2f} AED", 0, 1, 'R')
     pdf.cell(100, 6, f"Discount ({financials['disc_pct']}%):", 0); pdf.cell(90, 6, f"- {financials['disc_val']:,.2f} AED", 0, 1, 'R')
     
-    # تحديث نص التقرير حسب حالة خيار الباركنج
     parking_label = "Selling Price (with parking):" if financials.get('has_parking', True) else "Selling Price (w/o parking):"
     pdf.cell(100, 6, parking_label, 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
     
@@ -447,16 +459,20 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
             pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C')
             pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R')
 
-    if layout_url and str(layout_url) != 'nan':
+    # <--- تحسين تحميل وتضمين صورة المخطط داخل ملف ה-PDF --->
+    if layout_url:
         try:
-            res = requests.get(layout_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-            img_data = BytesIO(res.content)
-            pdf.ln(10)
-            if pdf.get_y() > 180: pdf.add_page()
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
-            pdf.image(img_data, x=30, y=pdf.get_y()+5, w=150)
-        except: pass
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            res = requests.get(layout_url, headers=headers, timeout=10)
+            if res.status_code == 200:
+                img_data = BytesIO(res.content)
+                pdf.ln(10)
+                if pdf.get_y() > 180: pdf.add_page()
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
+                pdf.image(img_data, x=30, y=pdf.get_y()+5, w=150)
+        except Exception: 
+            pass
 
     return pdf.output(dest='S')
 
@@ -473,7 +489,6 @@ with st.sidebar:
     default_m_pct = ALL_PLANS[selected_plan].get("default_monthly", 1.0)
     extra_disc = st.number_input("Extra Discount %", 0.0, 15.0, 0.0)
     
-    # 🌟 خيار إضافة الباركنج (Optional Parking) 🌟
     include_parking = st.checkbox("Include Parking", value=True)
     
     st.subheader("Structure")
@@ -491,7 +506,6 @@ if df_inventory is not None:
     u_price = float(str(unit_data.get('Original Price (AED)', '0')).replace(',', ''))
     total_disc_pct = ALL_PLANS[selected_plan]['disc'] + extra_disc
     
-    # 🌟 احتساب سعر الباركنج بناءً على الـ Checkbox 🌟
     parking_price = float(str(unit_data.get('parking', '0')).replace(',', '')) if include_parking else 0.0
     selling_price = (u_price * (1 - total_disc_pct/100)) + parking_price
     
@@ -508,32 +522,46 @@ if df_inventory is not None:
     settings = {'dp_months': dp_m, 'monthly_pct': m_pct, 'recovery_freq': r_freq, 'recovery_pct': r_pct}
     schedule = calculate_ultra_flexible_plan(selling_price, ALL_PLANS[selected_plan], settings, date.today(), h_date, proj_info["res_fee"])
     
-    # --- البحث الذكي عن الصور ---
+    # <--- البحث المطور والذكي عن الصور مع تنظيف النصوص وتحويل الروابط --->
     layout_url = None
     if df_photos is not None:
         try:
-            p_key = selected_project.split()[0].upper()
             df_photos['clean_proj'] = df_photos['Project'].astype(str).str.upper().str.strip()
             df_photos['clean_bed'] = df_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False).str.strip()
             df_photos['clean_sub'] = df_photos['Sub-type'].astype(str).str.upper().str.strip()
             
             unit_bed = str(unit_data.get('Bedrooms', '')).replace('.0', '').strip()
             unit_sub = str(unit_data.get('Sub-type', '')).upper().strip()
+            proj_name = selected_project.upper().strip()
+            p_key = selected_project.split()[0].upper()
 
+            # 1. مطابقة دقيقة باسم المشروع بالكامل + الغرف + Sub-type
             match = df_photos[
-                (df_photos['clean_proj'].str.contains(p_key)) & 
+                (df_photos['clean_proj'] == proj_name) & 
                 (df_photos['clean_bed'] == unit_bed) & 
                 (df_photos['clean_sub'] == unit_sub)
             ]
-            
+
+            # 2. مطابقة بالاسم الأول للمشروع + الغرف + Sub-type
             if match.empty:
                 match = df_photos[
-                    (df_photos['clean_proj'].str.contains(p_key)) & 
+                    (df_photos['clean_proj'].str.contains(p_key, na=False)) & 
+                    (df_photos['clean_bed'] == unit_bed) & 
+                    (df_photos['clean_sub'] == unit_sub)
+                ]
+
+            # 3. مطابقة بالاسم الأول للمشروع + عدد الغرف فقط
+            if match.empty:
+                match = df_photos[
+                    (df_photos['clean_proj'].str.contains(p_key, na=False)) & 
                     (df_photos['clean_bed'] == unit_bed)
                 ]
 
             if not match.empty:
-                layout_url = match.iloc[0]['Layout_URL']
+                raw_url = match.iloc[0]['Layout_URL']
+                # تحويل الرابط تلقائياً إلى رابط مباشر يفتح كصورة
+                layout_url = convert_to_direct_image_url(raw_url)
+
         except Exception as e: 
             layout_url = None
 
