@@ -5,22 +5,6 @@ import requests
 from io import BytesIO
 from datetime import date
 from dateutil.relativedelta import relativedelta
-import re
-from PIL import Image  # <--- إضافة مهمة جداً لمعالجة الصور بأمان
-
-# --- دالة مساعدة لتحويل روابط Google Drive إلى روابط صور مباشرة ---
-def convert_to_direct_image_url(url):
-    if not url or str(url) == 'nan':
-        return None
-    url = str(url).strip()
-    
-    # تحويل رابط Google Drive عادي أو مشاركة إلى رابط استعراض مباشر
-    drive_match = re.search(r'(?:file/d/|id=|folders/)([\w-]+)', url)
-    if drive_match:
-        file_id = drive_match.group(1)
-        return f"https://drive.google.com/thumbnail?id={file_id}&sz=w1000"
-    
-    return url
 
 # --- 1. قاعدة بيانات المشاريع ---
 PROJECTS_DATABASE = {
@@ -224,44 +208,44 @@ ALL_PLANS = {
     "Horya-10% DP / 10% Disc / 10% HO / 100 Months": {
         "dp_pct": 10, 
         "disc": 10, 
-        "ho_pct": 10,
+        "ho_pct": 10,            
         "installments_count": 100, 
-        "default_monthly": 0.8
+        "default_monthly": 0.8  
     },
     "Horya-15% DP / 15% Disc / 10% HO / 100 Months": {
         "dp_pct": 15, 
         "disc": 15, 
-        "ho_pct": 10,
+        "ho_pct": 10,            
         "installments_count": 100, 
-        "default_monthly": 0.75
+        "default_monthly": 0.75 
     },
     "Horya-10% DP / 5% Disc / 10% HO / 100 Months": {
         "dp_pct": 10,
         "disc": 5,
-        "ho_pct": 10,
+        "ho_pct": 10,            
         "installments_count": 100,
-        "default_monthly": 0.80
+        "default_monthly": 0.80  
     },
     "Horya-20% DP / 10% Disc / 10% HO / 100 Months": {
         "dp_pct": 20,
         "disc": 10,
-        "ho_pct": 10,
+        "ho_pct": 10,            
         "installments_count": 100,
-        "default_monthly": 0.70
+        "default_monthly": 0.70  
     },
     "Horya-30% DP / 15% Disc / 10% HO / 100 Months": {
         "dp_pct": 30,
         "disc": 15,
-        "ho_pct": 10,
+        "ho_pct": 10,            
         "installments_count": 100,
-        "default_monthly": 0.60
+        "default_monthly": 0.60  
     },
     "Horya-10% DP / 0% Disc / No HO / 144 Months": {
         "dp_pct": 10,
         "disc": 0,
-        "ho_pct": 0,
+        "ho_pct": 0,              
         "installments_count": 144,
-        "default_monthly": 0.625
+        "default_monthly": 0.625  
     },
     "Horya-10% DP / 0% Disc / No HO / 144 Months 2": {
         "dp_pct": 10,
@@ -310,85 +294,66 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
         else:
             plan.append({"Milestone": "DP Balance Payment", "Date": start_date.strftime("%b-%y"), "Percent": f"{dp_pct}%", "Amount": dp_after_booking})
 
-    # --- 2. التفرقة بين الخطط وحساب Recovery ---
+    # --- 2. التفرقة بين الخطط وحساب الأقساط + الـ Recovery ---
     ho_pct = plan_cfg.get("ho_pct", 0)
     total_months = plan_cfg.get('installments_count', 0)
     monthly_pct = settings['monthly_pct'] / 100
+    r_freq = settings.get('recovery_freq', 0)
+    r_pct = settings.get('recovery_pct', 0.0)
+    
     curr_d = start_date + relativedelta(months=max(1, dp_months))
-
-    recovery_freq = settings.get("recovery_freq", 0)
-    recovery_pct = settings.get("recovery_pct", 0)
+    month_counter = 1
 
     if ho_pct > 0 and total_months > 0:
+        # >>> نظام الخطط المحددة بالشهور <<<
         for m in range(1, total_months + 1):
             amt = selling_price * monthly_pct
-            plan.append({
-                "Milestone": f"Monthly Installment {m}",
-                "Date": curr_d.strftime("%b-%y"),
-                "Percent": f"{settings['monthly_pct']}%",
-                "Amount": amt
-            })
+            plan.append({"Milestone": f"Monthly Installment {m}", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['monthly_pct']}%", "Amount": amt})
+            
+            # إضافة الـ Recovery Payment إن وُجد وفقًا للتكرار المساعد
+            if r_freq > 0 and r_pct > 0 and (m % r_freq == 0):
+                rec_amt = selling_price * (r_pct / 100)
+                plan.append({"Milestone": f"Recovery Payment ({r_pct}%)", "Date": curr_d.strftime("%b-%y"), "Percent": f"{r_pct}%", "Amount": rec_amt})
 
-            if recovery_freq > 0 and recovery_pct > 0:
-                if m % recovery_freq == 0:
-                    recovery_amount = selling_price * (recovery_pct / 100)
-                    plan.append({
-                        "Milestone": f"Recovery Payment {m // recovery_freq}",
-                        "Date": curr_d.strftime("%b-%y"),
-                        "Percent": f"{recovery_pct}%",
-                        "Amount": recovery_amount
-                    })
-
+            # إذا وصلنا لشهر الاستلام، بنضيف دفعة الـ HO
             if curr_d.year == handover_date.year and curr_d.month == handover_date.month:
                 ho_amount = selling_price * (ho_pct / 100)
-                plan.append({
-                    "Milestone": "HANDOVER PAYMENT",
-                    "Date": curr_d.strftime("%b-%y"),
-                    "Percent": f"{ho_pct}%",
-                    "Amount": ho_amount
-                })
-
+                plan.append({"Milestone": "HANDOVER PAYMENT", "Date": curr_d.strftime("%b-%y"), "Percent": f"{ho_pct}%", "Amount": ho_amount})
+            
             curr_d += relativedelta(months=1)
     else:
-        m_count = 1
+        # >>> نظام الخطط القديمة (حسب الاستلام) <<<
         while curr_d < handover_date:
             amt = selling_price * monthly_pct
             if amt > 0:
-                plan.append({
-                    "Milestone": f"Monthly Installment {m_count}", 
-                    "Date": curr_d.strftime("%b-%y"), 
-                    "Percent": f"{settings['monthly_pct']}%", 
-                    "Amount": amt
-                })
+                plan.append({"Milestone": "Monthly Installment", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['monthly_pct']}%", "Amount": amt})
+            
+            # إضافة الـ Recovery Payment
+            if r_freq > 0 and r_pct > 0 and (month_counter % r_freq == 0):
+                rec_amt = selling_price * (r_pct / 100)
+                plan.append({"Milestone": f"Recovery Payment ({r_pct}%)", "Date": curr_d.strftime("%b-%y"), "Percent": f"{r_pct}%", "Amount": rec_amt})
 
-            if recovery_freq > 0 and recovery_pct > 0:
-                if m_count % recovery_freq == 0:
-                    recovery_amount = selling_price * (recovery_pct / 100)
-                    plan.append({
-                        "Milestone": f"Recovery Payment {m_count // recovery_freq}",
-                        "Date": curr_d.strftime("%b-%y"),
-                        "Percent": f"{recovery_pct}%",
-                        "Amount": recovery_amount
-                    })
-
-            m_count += 1
             curr_d += relativedelta(months=1)
+            month_counter += 1
 
+        # حساب المتبقي (Balance) كدفعة أخيرة عند الاستلام للخطط القديمة
         total_so_far = sum(item['Amount'] for item in plan)
         handover_amt = selling_price - total_so_far
         if handover_amt > 1:
-            plan.append({
-                "Milestone": "Balance on Handover", 
-                "Date": handover_date.strftime("%b-%y"), 
-                "Percent": f"{(handover_amt/selling_price)*100:.1f}%", 
-                "Amount": handover_amt
-            })
+            plan.append({"Milestone": "Balance on Handover", "Date": handover_date.strftime("%b-%y"), "Percent": "Balance", "Amount": handover_amt})
 
     # --- 3. إضافة سطور الإجماليات (Totals) ---
-    total_inst_val = sum(item['Amount'] for item in plan if "HANDOVER" not in item['Milestone'].upper() and "BALANCE" not in item['Milestone'].upper())
+    # حساب TOTAL INSTALLMENT: يشمل (DP + Monthly + Recovery) ويستثني الاستلام (HANDOVER أو Balance)
+    total_inst_val = 0
+    for item in plan:
+        m_name = item['Milestone'].upper()
+        if "HANDOVER" not in m_name and "BALANCE" not in m_name:
+            total_inst_val += item['Amount']
+
     plan.append({"Milestone": "TOTAL INSTALLMENT", "Date": "---", "Percent": "---", "Amount": total_inst_val})
 
-    total_payable_val = sum(item['Amount'] for item in plan if "TOTAL" not in item['Milestone'].upper())
+    # حساب الإجمالي النهائي الفعلي (Total Payable)
+    total_payable_val = sum(item['Amount'] for item in plan if "TOTAL" not in item['Milestone'])
     plan.append({"Milestone": "TOTAL PAYABLE", "Date": "---", "Percent": "100%", "Amount": total_payable_val})
 
     return plan
@@ -408,7 +373,6 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(190, 8, " UNIT SPECIFICATIONS", 0, 1, 'L', True)
-
     pdf.set_font("Arial", size=10); pdf.set_text_color(0)
     pdf.cell(95, 6, f" Unit No: {unit_data.get('Plot + Unit No.', 'N/A')}", 0, 0)
     pdf.cell(95, 6, f" Sub-type: {unit_data.get('Sub-type', 'N/A')}", 0, 1)
@@ -423,14 +387,15 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
     pdf.set_font("Arial", size=10)
     pdf.cell(100, 6, "Original Price:", 0); pdf.cell(90, 6, f"{financials['u_price']:,.2f} AED", 0, 1, 'R')
     pdf.cell(100, 6, f"Discount ({financials['disc_pct']}%):", 0); pdf.cell(90, 6, f"- {financials['disc_val']:,.2f} AED", 0, 1, 'R')
+    if financials['parking_val'] > 0:
+        pdf.cell(100, 6, "Parking Fee:", 0); pdf.cell(90, 6, f"+ {financials['parking_val']:,.2f} AED", 0, 1, 'R')
     
-    parking_label = "Selling Price (with parking):" if financials.get('has_parking', True) else "Selling Price (w/o parking):"
-    pdf.cell(100, 6, parking_label, 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
-    
+    pdf.cell(100, 6, "Selling Price with parking:", 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
     pdf.set_text_color(200, 0, 0)
     pdf.cell(100, 6, "Gov. Fees (Registration):", 0); pdf.cell(90, 6, f"{financials['gov_fees']:,.2f} AED", 0, 1, 'R')
     pdf.set_text_color(0)
     pdf.set_font("Arial", 'B', 10)
+    
     total_all = financials['selling_price'] + financials['gov_fees']
     pdf.cell(100, 8, "Total Amount Payable:", 0); pdf.cell(90, 8, f"{total_all:,.2f} AED", 0, 1, 'R')
     pdf.ln(8)
@@ -441,7 +406,7 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
 
     pdf.set_text_color(0); pdf.set_font("Arial", size=9)
     for row in schedule:
-        if row['Milestone'] in ["TOTAL INSTALLMENT", "TOTAL PAYABLE"]:
+        if row['Milestone'] == "TOTAL INSTALLMENT":
             pdf.set_font("Arial", 'B', 9); pdf.set_fill_color(220, 220, 220)
             pdf.cell(70, 8, f" {row['Milestone']}", 1, 0, 'L', True)
             pdf.cell(40, 8, f" {row['Date']}", 1, 0, 'C', True)
@@ -454,30 +419,20 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
             pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C')
             pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R')
 
-    # <--- تحسين جذرى لتحميل وتضمين الصور من Google Drive داخل PDF --->
-    if layout_url:
+    if layout_url and str(layout_url) != 'nan':
         try:
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-            res = requests.get(layout_url, headers=headers, timeout=10)
-            if res.status_code == 200:
-                img = Image.open(BytesIO(res.content))
-                img = img.convert('RGB')  # تحويل الصورة إلى RGB لضمان التوافق التام مع FPDF
-                
-                # حفظ الصورة مؤقتاً في الذاكرة كـ JPEG
-                img_io = BytesIO()
-                img.save(img_io, 'JPEG', quality=85)
-                img_io.seek(0)
-
-                pdf.add_page() # إضافة صفحة جديدة مخصصة للصورة لضمان التنسيق
-                pdf.set_font("Arial", 'B', 14)
-                pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
-                pdf.ln(5)
-                pdf.image(img_io, x=15, y=pdf.get_y(), w=180)
-        except Exception as e:
-            pass
+            res = requests.get(layout_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+            img_data = BytesIO(res.content)
+            pdf.ln(10)
+            if pdf.get_y() > 180: pdf.add_page()
+            pdf.set_font("Arial", 'B', 12)
+            pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
+            pdf.image(img_data, x=30, y=pdf.get_y()+5, w=150)
+        except: pass
 
     return pdf.output(dest='S')
 
+# --- Streamlit UI ---
 st.set_page_config(page_title="Reportage Smart Agent", layout="wide")
 st.title("🏗️ Reportage Sales AI")
 
@@ -487,13 +442,14 @@ with st.sidebar:
     proj_info = PROJECTS_DATABASE[selected_project]
     df_inventory = load_google_sheet(proj_info["url"])
     df_photos = load_google_sheet(PHOTO_BANK_URL)
+    
     selected_plan = st.selectbox("Plan:", list(ALL_PLANS.keys()))
     default_m_pct = ALL_PLANS[selected_plan].get("default_monthly", 1.0)
     extra_disc = st.number_input("Extra Discount %", 0.0, 15.0, 0.0)
     
-    include_parking = st.checkbox("Include Parking", value=True)
+    st.subheader("Parking & Structure")
+    parking_input = st.number_input("Parking Fee (AED):", min_value=0.0, value=0.0, step=5000.0)
     
-    st.subheader("Structure")
     m_pct = st.number_input("Monthly %", 0.0, 5.0, float(default_m_pct))
     dp_m = st.number_input("DP Split (Months):", 1, 24, 1)
     r_freq = st.selectbox("Recovery (Months):", [0, 6, 12])
@@ -505,65 +461,63 @@ if df_inventory is not None:
     
     h_date = get_handover_date(unit_data)
     
+    # جلب سعر الباركينج الافتراضي من أكسل (إذا وُجد) أو من الإدخال اليدوي
+    sheet_parking = float(str(unit_data.get('parking', '0')).replace(',', ''))
+    parking_val = parking_input if parking_input > 0 else sheet_parking
+
     u_price = float(str(unit_data.get('Original Price (AED)', '0')).replace(',', ''))
     total_disc_pct = ALL_PLANS[selected_plan]['disc'] + extra_disc
     
-    parking_price = float(str(unit_data.get('parking', '0')).replace(',', '')) if include_parking else 0.0
-    selling_price = (u_price * (1 - total_disc_pct/100)) + parking_price
-    
+    # السعر النهائي شامل الباركينج
+    selling_price = (u_price * (1 - total_disc_pct/100)) + parking_val
     gov_fees = (selling_price * (proj_info["gov_pct"] / 100)) + proj_info["admin_fees"]
     
     financials = {
         'u_price': u_price, 
         'disc_pct': total_disc_pct, 
-        'disc_val': u_price * (total_disc_pct/100), 
+        'disc_val': u_price * (total_disc_pct/100),
+        'parking_val': parking_val,
         'selling_price': selling_price, 
-        'gov_fees': gov_fees,
-        'has_parking': include_parking
+        'gov_fees': gov_fees
     }
-    settings = {'dp_months': dp_m, 'monthly_pct': m_pct, 'recovery_freq': r_freq, 'recovery_pct': r_pct}
+    
+    settings = {
+        'dp_months': dp_m, 
+        'monthly_pct': m_pct, 
+        'recovery_freq': r_freq, 
+        'recovery_pct': r_pct
+    }
+    
     schedule = calculate_ultra_flexible_plan(selling_price, ALL_PLANS[selected_plan], settings, date.today(), h_date, proj_info["res_fee"])
     
-    # <--- مطابقة الصور والبحث عنها --->
+    # --- البحث الذكي عن الصور (Smart Image Search) ---
     layout_url = None
     if df_photos is not None:
         try:
+            p_key = selected_project.split()[0].upper()
+            
             df_photos['clean_proj'] = df_photos['Project'].astype(str).str.upper().str.strip()
             df_photos['clean_bed'] = df_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False).str.strip()
             df_photos['clean_sub'] = df_photos['Sub-type'].astype(str).str.upper().str.strip()
             
             unit_bed = str(unit_data.get('Bedrooms', '')).replace('.0', '').strip()
             unit_sub = str(unit_data.get('Sub-type', '')).upper().strip()
-            proj_name = selected_project.upper().strip()
-            p_key = selected_project.split()[0].upper()
 
-            # 1. مطابقة دقيقة
             match = df_photos[
-                (df_photos['clean_proj'] == proj_name) & 
+                (df_photos['clean_proj'].str.contains(p_key)) & 
                 (df_photos['clean_bed'] == unit_bed) & 
                 (df_photos['clean_sub'] == unit_sub)
             ]
-
-            # 2. مطابقة جزئية
+            
             if match.empty:
                 match = df_photos[
-                    (df_photos['clean_proj'].str.contains(p_key, na=False)) & 
-                    (df_photos['clean_bed'] == unit_bed) & 
-                    (df_photos['clean_sub'] == unit_sub)
-                ]
-
-            # 3. مطابقة الغرف فقط
-            if match.empty:
-                match = df_photos[
-                    (df_photos['clean_proj'].str.contains(p_key, na=False)) & 
+                    (df_photos['clean_proj'].str.contains(p_key)) & 
                     (df_photos['clean_bed'] == unit_bed)
                 ]
 
             if not match.empty:
-                raw_url = match.iloc[0]['Layout_URL']
-                layout_url = convert_to_direct_image_url(raw_url)
-
-        except Exception: 
+                layout_url = match.iloc[0]['Layout_URL']
+        except Exception as e: 
             layout_url = None
 
     st.divider()
