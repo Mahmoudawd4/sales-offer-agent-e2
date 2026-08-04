@@ -524,6 +524,7 @@ if df_inventory is not None:
     m2.metric("Gov. Fees", f"{gov_fees:,.2f} AED", delta=f"{h_date.strftime('%b %Y')} Handover")
     m3.metric("Total Payable", f"{selling_price + gov_fees:,.2f} AED")
     
+    
     st.subheader(f"📊 Payment Schedule - {unit_id}")
     c1, c2 = st.columns([3, 1])
     with c1: 
