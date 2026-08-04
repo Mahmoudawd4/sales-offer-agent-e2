@@ -5,6 +5,7 @@ import requests
 from io import BytesIO
 from datetime import date
 from dateutil.relativedelta import relativedelta
+import re
 
 # --- 1. قاعدة بيانات المشاريع ---
 PROJECTS_DATABASE = {
@@ -256,6 +257,22 @@ ALL_PLANS = {
     }
 }
 
+# --- دالة تحويل روابط Google Drive إلى روابط تنزيل مباشرة ---
+def convert_to_direct_url(url):
+    if not url or pd.isna(url):
+        return None
+    url = str(url).strip()
+    # التعامل مع روابط Google Drive
+    match = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', url)
+    if match:
+        file_id = match.group(1)
+        return f'https://drive.google.com/uc?export=download&id={file_id}'
+    match_id = re.search(r'id=([a-zA-Z0-9_-]+)', url)
+    if 'drive.google.com' in url and match_id:
+        file_id = match_id.group(1)
+        return f'https://drive.google.com/uc?export=download&id={file_id}'
+    return url
+
 @st.cache_data
 def load_google_sheet(url):
     try:
@@ -307,31 +324,26 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
     curr_d = start_date + relativedelta(months=max(1, dp_months))
 
     if ho_pct > 0 and total_months > 0:
-        # نظام الخطط المحددة بعدد شهور معين (مثل 100 شهر)
         for m in range(1, total_months + 1):
             amt = selling_price * monthly_pct
             plan.append({"Milestone": f"Monthly Installment {m}", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['monthly_pct']}%", "Amount": amt})
             
-            # إضافة Recovery إذا تم تفعيله وكان الموعد ينطبق
             if r_freq > 0 and r_pct > 0 and (m % r_freq == 0):
                 r_amt = selling_price * r_pct
                 plan.append({"Milestone": f"Recovery Payment ({m}m)", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['recovery_pct']}%", "Amount": r_amt})
 
-            # دفعة الاستلام عند تاريخ الاستلام
             if curr_d.year == handover_date.year and curr_d.month == handover_date.month:
                 ho_amount = selling_price * (ho_pct / 100)
                 plan.append({"Milestone": "HANDOVER PAYMENT", "Date": curr_d.strftime("%b-%y"), "Percent": f"{ho_pct}%", "Amount": ho_amount})
             
             curr_d += relativedelta(months=1)
     else:
-        # نظام الخطط المستمرة حتى تاريخ الاستلام
         month_count = 1
         while curr_d < handover_date:
             amt = selling_price * monthly_pct
             if amt > 0:
                 plan.append({"Milestone": f"Monthly Installment {month_count}", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['monthly_pct']}%", "Amount": amt})
             
-            # إضافة Recovery إذا كان الشهر ينطبق عليه التكرار
             if r_freq > 0 and r_pct > 0 and (month_count % r_freq == 0):
                 r_amt = selling_price * r_pct
                 plan.append({"Milestone": f"Recovery Payment ({month_count}m)", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['recovery_pct']}%", "Amount": r_amt})
@@ -339,7 +351,6 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
             curr_d += relativedelta(months=1)
             month_count += 1
 
-        # حساب المتبقي (Balance) دفعة استلام أوتوماتيكية للخطط العادية
         total_so_far = sum(item['Amount'] for item in plan)
         handover_amt = selling_price - total_so_far
         if handover_amt > 1:
@@ -348,8 +359,9 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
     # 4. حساب الإجماليات
     dp_total = sum(item['Amount'] for item in plan if "DP" in item['Milestone'] or "Reservation" in item['Milestone'])
     inst_total = sum(item['Amount'] for item in plan if "Monthly" in item['Milestone'] or "Recovery" in item['Milestone'])
+    
+    # تحسين تجميع الأقساط والمقدم ليكون شاملاً
     total_installment_val = dp_total + inst_total
-
     plan.append({"Milestone": "TOTAL INSTALLMENT", "Date": "---", "Percent": "---", "Amount": total_installment_val})
 
     total_payable_val = sum(item['Amount'] for item in plan if "TOTAL" not in item['Milestone'])
@@ -360,8 +372,12 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
 def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_name, project_name):
     pdf = FPDF()
     pdf.add_page()
-    try: pdf.image(LOGO_URL, x=10, y=8, w=35)
-    except: pass
+    try: 
+        resp = requests.get(LOGO_URL, timeout=5)
+        if resp.status_code == 200:
+            pdf.image(BytesIO(resp.content), x=10, y=8, w=35)
+    except: 
+        pass
 
     pdf.set_font("Arial", 'B', 18)
     pdf.set_text_color(44, 62, 80)
@@ -419,16 +435,18 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
             pdf.cell(20, 8, f" {row['Percent']}", 1, 0, 'C')
             pdf.cell(60, 8, f"{row['Amount']:,.2f} ", 1, 1, 'R')
 
-    if layout_url and str(layout_url) != 'nan':
+    # جلب رسم الكروكي (Layout Image)
+    if layout_url:
         try:
             res = requests.get(layout_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
-            img_data = BytesIO(res.content)
-            pdf.ln(10)
-            if pdf.get_y() > 180: pdf.add_page()
-            pdf.set_font("Arial", 'B', 12)
-            pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
-            pdf.image(img_data, x=30, y=pdf.get_y()+5, w=150)
-        except: pass
+            if res.status_code == 200:
+                img_data = BytesIO(res.content)
+                pdf.add_page()
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(0, 10, "UNIT LAYOUT", ln=True, align='C')
+                pdf.image(img_data, x=20, y=pdf.get_y()+5, w=170)
+        except Exception: 
+            pass
 
     return pdf.output(dest='S')
 
@@ -447,14 +465,12 @@ with st.sidebar:
     default_m_pct = ALL_PLANS[selected_plan].get("default_monthly", 1.0)
     extra_disc = st.number_input("Extra Discount %", 0.0, 15.0, 0.0)
     
-    # خيار الباركنج الاختياري
     include_parking = st.checkbox("Include Parking", value=True)
 
     st.subheader("Structure")
     m_pct = st.number_input("Monthly %", 0.0, 5.0, float(default_m_pct))
     dp_m = st.number_input("DP Split (Months):", 1, 24, 1)
     
-    # إعدادات الـ Recovery
     r_freq = st.selectbox("Recovery Frequency (Months):", [0, 6, 12])
     r_pct = st.number_input("Recovery %", 0.0, 20.0, 0.0)
 
@@ -466,7 +482,6 @@ if df_inventory is not None:
     
     u_price = float(str(unit_data.get('Original Price (AED)', '0')).replace(',', ''))
     
-    # التحقق من وجود سعر الباركنج وحسابه حسب الاختيار
     parking_val = 0.0
     if include_parking:
         parking_col = 'parking' if 'parking' in unit_data else ('Parking Price' if 'Parking Price' in unit_data else None)
@@ -500,33 +515,44 @@ if df_inventory is not None:
     
     schedule = calculate_ultra_flexible_plan(selling_price, ALL_PLANS[selected_plan], settings, date.today(), h_date, proj_info["res_fee"])
     
-    # --- البحث الذكي عن الصور ---
+    # --- البحث الذكي عن الصور وإصلاح الروابط ---
     layout_url = None
     if df_photos is not None:
         try:
-            p_key = selected_project.split()[0].upper()
-            df_photos['clean_proj'] = df_photos['Project'].astype(str).str.upper().str.strip()
-            df_photos['clean_bed'] = df_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False).str.strip()
-            df_photos['clean_sub'] = df_photos['Sub-type'].astype(str).str.upper().str.strip()
-            
-            unit_bed = str(unit_data.get('Bedrooms', '')).replace('.0', '').strip()
-            unit_sub = str(unit_data.get('Sub-type', '')).upper().strip()
+            # التحقق من وجود عمود الصور بمرونة (Layout_URL أو Layout أو Photo)
+            layout_col = None
+            for col in ['Layout_URL', 'Layout', 'Photo', 'URL', 'IMAGE']:
+                if col in df_photos.columns:
+                    layout_col = col
+                    break
 
-            match = df_photos[
-                (df_photos['clean_proj'].str.contains(p_key)) & 
-                (df_photos['clean_bed'] == unit_bed) & 
-                (df_photos['clean_sub'] == unit_sub)
-            ]
-            
-            if match.empty:
+            if layout_col:
+                p_key = selected_project.split()[0].upper()
+                df_photos['clean_proj'] = df_photos['Project'].astype(str).str.upper().str.strip()
+                df_photos['clean_bed'] = df_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False).str.strip()
+                df_photos['clean_sub'] = df_photos['Sub-type'].astype(str).str.upper().str.strip()
+                
+                unit_bed = str(unit_data.get('Bedrooms', '')).replace('.0', '').strip()
+                unit_sub = str(unit_data.get('Sub-type', '')).upper().strip()
+
+                # المطابقة 1: بالمشروع وعدد الغرف والنوع
                 match = df_photos[
-                    (df_photos['clean_proj'].str.contains(p_key)) & 
-                    (df_photos['clean_bed'] == unit_bed)
+                    (df_photos['clean_proj'].str.contains(p_key, na=False)) & 
+                    (df_photos['clean_bed'] == unit_bed) & 
+                    (df_photos['clean_sub'] == unit_sub)
                 ]
+                
+                # المطابقة 2: بالمشروع وعدد الغرف فقط
+                if match.empty:
+                    match = df_photos[
+                        (df_photos['clean_proj'].str.contains(p_key, na=False)) & 
+                        (df_photos['clean_bed'] == unit_bed)
+                    ]
 
-            if not match.empty:
-                layout_url = match.iloc[0]['Layout_URL']
-        except Exception as e: 
+                if not match.empty:
+                    raw_url = match.iloc[0][layout_col]
+                    layout_url = convert_to_direct_url(raw_url)
+        except Exception: 
             layout_url = None
 
     st.divider()
@@ -548,6 +574,9 @@ if df_inventory is not None:
         st.subheader("🖼️ Unit Layout")
         _, img_col, _ = st.columns([1, 4, 1])
         with img_col: 
-            st.image(layout_url, use_container_width=True)
+            try:
+                st.image(layout_url, use_container_width=True)
+            except Exception:
+                st.error("Could not load image directly from URL. Please check image permissions.")
     else:
         st.info("No Layout found in Photo Bank for this project and bedroom type.")
