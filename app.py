@@ -208,44 +208,44 @@ ALL_PLANS = {
     "Horya-10% DP / 10% Disc / 10% HO / 100 Months": {
         "dp_pct": 10, 
         "disc": 10, 
-        "ho_pct": 10,            
+        "ho_pct": 10, 
         "installments_count": 100, 
-        "default_monthly": 0.8  
+        "default_monthly": 0.8 
     },
     "Horya-15% DP / 15% Disc / 10% HO / 100 Months": {
         "dp_pct": 15, 
         "disc": 15, 
-        "ho_pct": 10,            
+        "ho_pct": 10, 
         "installments_count": 100, 
         "default_monthly": 0.75 
     },
     "Horya-10% DP / 5% Disc / 10% HO / 100 Months": {
         "dp_pct": 10,
         "disc": 5,
-        "ho_pct": 10,            
+        "ho_pct": 10,
         "installments_count": 100,
-        "default_monthly": 0.80  
+        "default_monthly": 0.80
     },
     "Horya-20% DP / 10% Disc / 10% HO / 100 Months": {
         "dp_pct": 20,
         "disc": 10,
-        "ho_pct": 10,            
+        "ho_pct": 10,
         "installments_count": 100,
-        "default_monthly": 0.70  
+        "default_monthly": 0.70
     },
     "Horya-30% DP / 15% Disc / 10% HO / 100 Months": {
         "dp_pct": 30,
         "disc": 15,
-        "ho_pct": 10,            
+        "ho_pct": 10,
         "installments_count": 100,
-        "default_monthly": 0.60  
+        "default_monthly": 0.60
     },
     "Horya-10% DP / 0% Disc / No HO / 144 Months": {
         "dp_pct": 10,
         "disc": 0,
-        "ho_pct": 0,              
+        "ho_pct": 0,
         "installments_count": 144,
-        "default_monthly": 0.625  
+        "default_monthly": 0.625
     },
     "Horya-10% DP / 0% Disc / No HO / 144 Months 2": {
         "dp_pct": 10,
@@ -278,12 +278,15 @@ def get_handover_date(unit_data):
 
 def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date, handover_date, res_fee):
     plan = []
-    plan.append({"Milestone": "Reservation Fee (Booking)", "Date": "Now", "Percent": "-", "Amount": res_fee})
+    
+    # 1. دفعة الحجز
+    booking_amt = min(res_fee, selling_price)
+    plan.append({"Milestone": "Reservation Fee (Booking)", "Date": "Now", "Percent": "-", "Amount": booking_amt})
 
-    # --- 1. حساب المقدم (Down Payment) ---
+    # 2. المقدم (Down Payment)
     dp_pct = plan_cfg['dp_pct']
     total_dp_val = (selling_price * (dp_pct / 100))
-    dp_after_booking = max(0, total_dp_val - res_fee)
+    dp_after_booking = max(0, total_dp_val - booking_amt)
     dp_months = settings['dp_months']
 
     if dp_pct > 0:
@@ -294,65 +297,61 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
         else:
             plan.append({"Milestone": "DP Balance Payment", "Date": start_date.strftime("%b-%y"), "Percent": f"{dp_pct}%", "Amount": dp_after_booking})
 
-    # --- 2. التفرقة بين الخطط وحساب الأقساط + الـ Recovery ---
+    # 3. الأقساط الشهرية و الـ Recovery Payments
     ho_pct = plan_cfg.get("ho_pct", 0)
     total_months = plan_cfg.get('installments_count', 0)
     monthly_pct = settings['monthly_pct'] / 100
-    r_freq = settings.get('recovery_freq', 0)
-    r_pct = settings.get('recovery_pct', 0.0)
+    r_freq = settings['recovery_freq']
+    r_pct = settings['recovery_pct'] / 100
     
     curr_d = start_date + relativedelta(months=max(1, dp_months))
-    month_counter = 1
 
     if ho_pct > 0 and total_months > 0:
-        # >>> نظام الخطط المحددة بالشهور <<<
+        # نظام الخطط المحددة بعدد شهور معين (مثل 100 شهر)
         for m in range(1, total_months + 1):
             amt = selling_price * monthly_pct
             plan.append({"Milestone": f"Monthly Installment {m}", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['monthly_pct']}%", "Amount": amt})
             
-            # إضافة الـ Recovery Payment إن وُجد وفقًا للتكرار المساعد
+            # إضافة Recovery إذا تم تفعيله وكان الموعد ينطبق
             if r_freq > 0 and r_pct > 0 and (m % r_freq == 0):
-                rec_amt = selling_price * (r_pct / 100)
-                plan.append({"Milestone": f"Recovery Payment ({r_pct}%)", "Date": curr_d.strftime("%b-%y"), "Percent": f"{r_pct}%", "Amount": rec_amt})
+                r_amt = selling_price * r_pct
+                plan.append({"Milestone": f"Recovery Payment ({m}m)", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['recovery_pct']}%", "Amount": r_amt})
 
-            # إذا وصلنا لشهر الاستلام، بنضيف دفعة الـ HO
+            # دفعة الاستلام عند تاريخ الاستلام
             if curr_d.year == handover_date.year and curr_d.month == handover_date.month:
                 ho_amount = selling_price * (ho_pct / 100)
                 plan.append({"Milestone": "HANDOVER PAYMENT", "Date": curr_d.strftime("%b-%y"), "Percent": f"{ho_pct}%", "Amount": ho_amount})
             
             curr_d += relativedelta(months=1)
     else:
-        # >>> نظام الخطط القديمة (حسب الاستلام) <<<
+        # نظام الخطط المستمرة حتى تاريخ الاستلام
+        month_count = 1
         while curr_d < handover_date:
             amt = selling_price * monthly_pct
             if amt > 0:
-                plan.append({"Milestone": "Monthly Installment", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['monthly_pct']}%", "Amount": amt})
+                plan.append({"Milestone": f"Monthly Installment {month_count}", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['monthly_pct']}%", "Amount": amt})
             
-            # إضافة الـ Recovery Payment
-            if r_freq > 0 and r_pct > 0 and (month_counter % r_freq == 0):
-                rec_amt = selling_price * (r_pct / 100)
-                plan.append({"Milestone": f"Recovery Payment ({r_pct}%)", "Date": curr_d.strftime("%b-%y"), "Percent": f"{r_pct}%", "Amount": rec_amt})
+            # إضافة Recovery إذا كان الشهر ينطبق عليه التكرار
+            if r_freq > 0 and r_pct > 0 and (month_count % r_freq == 0):
+                r_amt = selling_price * r_pct
+                plan.append({"Milestone": f"Recovery Payment ({month_count}m)", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['recovery_pct']}%", "Amount": r_amt})
 
             curr_d += relativedelta(months=1)
-            month_counter += 1
+            month_count += 1
 
-        # حساب المتبقي (Balance) كدفعة أخيرة عند الاستلام للخطط القديمة
+        # حساب المتبقي (Balance) دفعة استلام أوتوماتيكية للخطط العادية
         total_so_far = sum(item['Amount'] for item in plan)
         handover_amt = selling_price - total_so_far
         if handover_amt > 1:
-            plan.append({"Milestone": "Balance on Handover", "Date": handover_date.strftime("%b-%y"), "Percent": "Balance", "Amount": handover_amt})
+            plan.append({"Milestone": "Balance on Handover", "Date": handover_date.strftime("%b-%y"), "Percent": f"{(handover_amt/selling_price)*100:.1f}%", "Amount": handover_amt})
 
-    # --- 3. إضافة سطور الإجماليات (Totals) ---
-    # حساب TOTAL INSTALLMENT: يشمل (DP + Monthly + Recovery) ويستثني الاستلام (HANDOVER أو Balance)
-    total_inst_val = 0
-    for item in plan:
-        m_name = item['Milestone'].upper()
-        if "HANDOVER" not in m_name and "BALANCE" not in m_name:
-            total_inst_val += item['Amount']
+    # 4. حساب الإجماليات
+    dp_total = sum(item['Amount'] for item in plan if "DP" in item['Milestone'] or "Reservation" in item['Milestone'])
+    inst_total = sum(item['Amount'] for item in plan if "Monthly" in item['Milestone'] or "Recovery" in item['Milestone'])
+    total_installment_val = dp_total + inst_total
 
-    plan.append({"Milestone": "TOTAL INSTALLMENT", "Date": "---", "Percent": "---", "Amount": total_inst_val})
+    plan.append({"Milestone": "TOTAL INSTALLMENT", "Date": "---", "Percent": "---", "Amount": total_installment_val})
 
-    # حساب الإجمالي النهائي الفعلي (Total Payable)
     total_payable_val = sum(item['Amount'] for item in plan if "TOTAL" not in item['Milestone'])
     plan.append({"Milestone": "TOTAL PAYABLE", "Date": "---", "Percent": "100%", "Amount": total_payable_val})
 
@@ -373,6 +372,7 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
     pdf.set_fill_color(240, 240, 240)
     pdf.set_font("Arial", 'B', 11)
     pdf.cell(190, 8, " UNIT SPECIFICATIONS", 0, 1, 'L', True)
+
     pdf.set_font("Arial", size=10); pdf.set_text_color(0)
     pdf.cell(95, 6, f" Unit No: {unit_data.get('Plot + Unit No.', 'N/A')}", 0, 0)
     pdf.cell(95, 6, f" Sub-type: {unit_data.get('Sub-type', 'N/A')}", 0, 1)
@@ -380,26 +380,26 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
     pdf.cell(95, 6, f" Total Area: {unit_data.get('Total Area (Sq.ft)', '0')} SQFT", 0, 1)
     pdf.cell(95, 6, f" Bedrooms: {unit_data.get('Bedrooms', 'N/A')}", 0, 0)
     pdf.cell(95, 6, f" View: {unit_data.get('View', 'N/A')}", 0, 1)
-    pdf.ln(5)
 
+    pdf.ln(5)
     pdf.set_font("Arial", 'B', 11); pdf.set_fill_color(240, 240, 240)
     pdf.cell(190, 8, f" FINANCIAL SUMMARY - {plan_name}", 0, 1, 'L', True)
+
     pdf.set_font("Arial", size=10)
     pdf.cell(100, 6, "Original Price:", 0); pdf.cell(90, 6, f"{financials['u_price']:,.2f} AED", 0, 1, 'R')
     pdf.cell(100, 6, f"Discount ({financials['disc_pct']}%):", 0); pdf.cell(90, 6, f"- {financials['disc_val']:,.2f} AED", 0, 1, 'R')
-    if financials['parking_val'] > 0:
-        pdf.cell(100, 6, "Parking Fee:", 0); pdf.cell(90, 6, f"+ {financials['parking_val']:,.2f} AED", 0, 1, 'R')
-    
-    pdf.cell(100, 6, "Selling Price with parking:", 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
+    pdf.cell(100, 6, f"Parking Price:", 0); pdf.cell(90, 6, f"{financials['parking_val']:,.2f} AED", 0, 1, 'R')
+    pdf.cell(100, 6, "Selling Price:", 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
+
     pdf.set_text_color(200, 0, 0)
     pdf.cell(100, 6, "Gov. Fees (Registration):", 0); pdf.cell(90, 6, f"{financials['gov_fees']:,.2f} AED", 0, 1, 'R')
+
     pdf.set_text_color(0)
     pdf.set_font("Arial", 'B', 10)
-    
     total_all = financials['selling_price'] + financials['gov_fees']
     pdf.cell(100, 8, "Total Amount Payable:", 0); pdf.cell(90, 8, f"{total_all:,.2f} AED", 0, 1, 'R')
-    pdf.ln(8)
 
+    pdf.ln(8)
     pdf.set_font("Arial", 'B', 10); pdf.set_fill_color(44, 62, 80); pdf.set_text_color(255, 255, 255)
     pdf.cell(70, 10, " Milestone", 1, 0, 'L', True); pdf.cell(40, 10, " Date", 1, 0, 'C', True)
     pdf.cell(20, 10, " %", 1, 0, 'C', True); pdf.cell(60, 10, " Amount (AED)", 1, 1, 'R', True)
@@ -447,12 +447,15 @@ with st.sidebar:
     default_m_pct = ALL_PLANS[selected_plan].get("default_monthly", 1.0)
     extra_disc = st.number_input("Extra Discount %", 0.0, 15.0, 0.0)
     
-    st.subheader("Parking & Structure")
-    parking_input = st.number_input("Parking Fee (AED):", min_value=0.0, value=0.0, step=5000.0)
-    
+    # خيار الباركنج الاختياري
+    include_parking = st.checkbox("Include Parking", value=True)
+
+    st.subheader("Structure")
     m_pct = st.number_input("Monthly %", 0.0, 5.0, float(default_m_pct))
     dp_m = st.number_input("DP Split (Months):", 1, 24, 1)
-    r_freq = st.selectbox("Recovery (Months):", [0, 6, 12])
+    
+    # إعدادات الـ Recovery
+    r_freq = st.selectbox("Recovery Frequency (Months):", [0, 6, 12])
     r_pct = st.number_input("Recovery %", 0.0, 20.0, 0.0)
 
 if df_inventory is not None:
@@ -461,21 +464,28 @@ if df_inventory is not None:
     
     h_date = get_handover_date(unit_data)
     
-    # جلب سعر الباركينج الافتراضي من أكسل (إذا وُجد) أو من الإدخال اليدوي
-    sheet_parking = float(str(unit_data.get('parking', '0')).replace(',', ''))
-    parking_val = parking_input if parking_input > 0 else sheet_parking
-
     u_price = float(str(unit_data.get('Original Price (AED)', '0')).replace(',', ''))
-    total_disc_pct = ALL_PLANS[selected_plan]['disc'] + extra_disc
     
-    # السعر النهائي شامل الباركينج
-    selling_price = (u_price * (1 - total_disc_pct/100)) + parking_val
+    # التحقق من وجود سعر الباركنج وحسابه حسب الاختيار
+    parking_val = 0.0
+    if include_parking:
+        parking_col = 'parking' if 'parking' in unit_data else ('Parking Price' if 'Parking Price' in unit_data else None)
+        if parking_col and pd.notna(unit_data.get(parking_col)):
+            try:
+                parking_val = float(str(unit_data.get(parking_col, '0')).replace(',', ''))
+            except:
+                parking_val = 0.0
+
+    total_disc_pct = ALL_PLANS[selected_plan]['disc'] + extra_disc
+    discount_val = u_price * (total_disc_pct / 100)
+    selling_price = (u_price - discount_val) + parking_val
+    
     gov_fees = (selling_price * (proj_info["gov_pct"] / 100)) + proj_info["admin_fees"]
     
     financials = {
         'u_price': u_price, 
         'disc_pct': total_disc_pct, 
-        'disc_val': u_price * (total_disc_pct/100),
+        'disc_val': discount_val, 
         'parking_val': parking_val,
         'selling_price': selling_price, 
         'gov_fees': gov_fees
@@ -490,12 +500,11 @@ if df_inventory is not None:
     
     schedule = calculate_ultra_flexible_plan(selling_price, ALL_PLANS[selected_plan], settings, date.today(), h_date, proj_info["res_fee"])
     
-    # --- البحث الذكي عن الصور (Smart Image Search) ---
+    # --- البحث الذكي عن الصور ---
     layout_url = None
     if df_photos is not None:
         try:
             p_key = selected_project.split()[0].upper()
-            
             df_photos['clean_proj'] = df_photos['Project'].astype(str).str.upper().str.strip()
             df_photos['clean_bed'] = df_photos['Bedrooms'].astype(str).str.replace('.0', '', regex=False).str.strip()
             df_photos['clean_sub'] = df_photos['Sub-type'].astype(str).str.upper().str.strip()
