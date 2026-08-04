@@ -604,17 +604,47 @@ def calculate_ultra_flexible_plan(selling_price, plan_cfg, settings, start_date,
     monthly_pct = settings['monthly_pct'] / 100
     curr_d = start_date + relativedelta(months=max(1, dp_months))
 
+    # Recovery Settings
+    recovery_freq = settings.get("recovery_freq", 0)
+    recovery_pct = settings.get("recovery_pct", 0)
+
     if ho_pct > 0 and total_months > 0:
         # >>> نظام الخطط الجديدة (100 شهر) <<<
         for m in range(1, total_months + 1):
+
+            # القسط الشهرى العادى
             amt = selling_price * monthly_pct
-            plan.append({"Milestone": f"Monthly Installment {m}", "Date": curr_d.strftime("%b-%y"), "Percent": f"{settings['monthly_pct']}%", "Amount": amt})
-            
-            # إذا وصلنا لشهر الاستلام، بنضيف دفعة الـ HO
+
+            plan.append({
+                "Milestone": f"Monthly Installment {m}",
+                "Date": curr_d.strftime("%b-%y"),
+                "Percent": f"{settings['monthly_pct']}%",
+                "Amount": amt
+            })
+
+            # Recovery Payment
+            if recovery_freq > 0 and recovery_pct > 0:
+                if m % recovery_freq == 0:
+                    recovery_amount = selling_price * (recovery_pct / 100)
+
+                    plan.append({
+                        "Milestone": f"Recovery {m // recovery_freq}",
+                        "Date": curr_d.strftime("%b-%y"),
+                        "Percent": f"{recovery_pct}%",
+                        "Amount": recovery_amount
+                    })
+
+            # Handover Payment
             if curr_d.year == handover_date.year and curr_d.month == handover_date.month:
                 ho_amount = selling_price * (ho_pct / 100)
-                plan.append({"Milestone": "HANDOVER PAYMENT", "Date": curr_d.strftime("%b-%y"), "Percent": f"{ho_pct}%", "Amount": ho_amount})
-            
+
+                plan.append({
+                    "Milestone": "HANDOVER PAYMENT",
+                    "Date": curr_d.strftime("%b-%y"),
+                    "Percent": f"{ho_pct}%",
+                    "Amount": ho_amount
+                })
+
             curr_d += relativedelta(months=1)
     else:
         # >>> نظام الخطط القديمة <<<
