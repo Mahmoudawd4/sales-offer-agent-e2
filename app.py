@@ -415,7 +415,11 @@ def create_sales_offer_pdf(unit_data, financials, schedule, layout_url, plan_nam
     pdf.set_font("Arial", size=10)
     pdf.cell(100, 6, "Original Price:", 0); pdf.cell(90, 6, f"{financials['u_price']:,.2f} AED", 0, 1, 'R')
     pdf.cell(100, 6, f"Discount ({financials['disc_pct']}%):", 0); pdf.cell(90, 6, f"- {financials['disc_val']:,.2f} AED", 0, 1, 'R')
-    pdf.cell(100, 6, "Selling Price with parking:", 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
+    
+    # تحديث نص التقرير حسب حالة خيار الباركنج
+    parking_label = "Selling Price (with parking):" if financials.get('has_parking', True) else "Selling Price (w/o parking):"
+    pdf.cell(100, 6, parking_label, 0); pdf.cell(90, 6, f"{financials['selling_price']:,.2f} AED", 0, 1, 'R')
+    
     pdf.set_text_color(200, 0, 0)
     pdf.cell(100, 6, "Gov. Fees (Registration):", 0); pdf.cell(90, 6, f"{financials['gov_fees']:,.2f} AED", 0, 1, 'R')
     pdf.set_text_color(0)
@@ -468,6 +472,10 @@ with st.sidebar:
     selected_plan = st.selectbox("Plan:", list(ALL_PLANS.keys()))
     default_m_pct = ALL_PLANS[selected_plan].get("default_monthly", 1.0)
     extra_disc = st.number_input("Extra Discount %", 0.0, 15.0, 0.0)
+    
+    # 🌟 خيار إضافة الباركنج (Optional Parking) 🌟
+    include_parking = st.checkbox("Include Parking", value=True)
+    
     st.subheader("Structure")
     m_pct = st.number_input("Monthly %", 0.0, 5.0, float(default_m_pct))
     dp_m = st.number_input("DP Split (Months):", 1, 24, 1)
@@ -482,10 +490,21 @@ if df_inventory is not None:
     
     u_price = float(str(unit_data.get('Original Price (AED)', '0')).replace(',', ''))
     total_disc_pct = ALL_PLANS[selected_plan]['disc'] + extra_disc
-    selling_price = (u_price * (1 - total_disc_pct/100)) + float(str(unit_data.get('parking', '0')).replace(',', ''))
+    
+    # 🌟 احتساب سعر الباركنج بناءً على الـ Checkbox 🌟
+    parking_price = float(str(unit_data.get('parking', '0')).replace(',', '')) if include_parking else 0.0
+    selling_price = (u_price * (1 - total_disc_pct/100)) + parking_price
+    
     gov_fees = (selling_price * (proj_info["gov_pct"] / 100)) + proj_info["admin_fees"]
     
-    financials = {'u_price': u_price, 'disc_pct': total_disc_pct, 'disc_val': u_price * (total_disc_pct/100), 'selling_price': selling_price, 'gov_fees': gov_fees}
+    financials = {
+        'u_price': u_price, 
+        'disc_pct': total_disc_pct, 
+        'disc_val': u_price * (total_disc_pct/100), 
+        'selling_price': selling_price, 
+        'gov_fees': gov_fees,
+        'has_parking': include_parking
+    }
     settings = {'dp_months': dp_m, 'monthly_pct': m_pct, 'recovery_freq': r_freq, 'recovery_pct': r_pct}
     schedule = calculate_ultra_flexible_plan(selling_price, ALL_PLANS[selected_plan], settings, date.today(), h_date, proj_info["res_fee"])
     
@@ -523,7 +542,6 @@ if df_inventory is not None:
     m1.metric("Selling Price", f"{selling_price:,.2f} AED")
     m2.metric("Gov. Fees", f"{gov_fees:,.2f} AED", delta=f"{h_date.strftime('%b %Y')} Handover")
     m3.metric("Total Payable", f"{selling_price + gov_fees:,.2f} AED")
-    
     
     st.subheader(f"📊 Payment Schedule - {unit_id}")
     c1, c2 = st.columns([3, 1])
