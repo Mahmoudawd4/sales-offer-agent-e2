@@ -241,13 +241,21 @@ ALL_PLANS = {
         "installments_count": 100,
         "default_monthly": 0.60
     },
-    "Horya-20% DP / 10% Disc / 10% HO / 120 Months": {
-    "dp_pct": 20,
+    "Horya-10% DP / 10% Disc / 10% HO / 120 Months": {
+    "dp_pct": 10,
     "disc": 10,
     "ho_pct": 10,
     "installments_count": 120,
     "default_monthly": 0.5833  # (100 - 20 - 10) / 120
     },
+    "Horya-10% DP / 10% Disc / 0% HO / 120 Months": {
+    "dp_pct": 10,
+    "disc": 10,
+    "ho_pct": 0.75,
+    "installments_count": 120,
+    "default_monthly": 0.75  # (100 - 10) / 120
+},
+    
     "Horya-10% DP / 0% Disc / No HO / 144 Months 2": {
         "dp_pct": 10,
         "disc": 0,
